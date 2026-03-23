@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#06080F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>IPL Mega Auction 2025</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<!-- ── LOGIN / REGISTER ── -->
+<div id="screen-auth" class="screen active">
+  <div class="auth-bg"></div>
+  <div class="auth-wrap">
+    <div class="logo-area">
+      <div class="trophy-icon">🏆</div>
+      <h1 class="logo-title">IPL MEGA<br><span>AUCTION</span></h1>
+      <p class="logo-sub">2025 SEASON</p>
+    </div>
+    <div class="auth-card">
+      <div class="auth-tabs">
+        <button class="auth-tab active" onclick="authTab('login')">LOGIN</button>
+        <button class="auth-tab" onclick="authTab('register')">REGISTER</button>
+        <button class="auth-tab" onclick="skipAuth()">SKIP →</button>
+      </div>
+      <!-- Login -->
+      <div id="auth-login" class="auth-panel active">
+        <div class="input-group"><label>USERNAME</label>
+          <input id="login-user" type="text" placeholder="your username" autocomplete="username"></div>
+        <div class="input-group"><label>PASSWORD</label>
+          <input id="login-pass" type="password" placeholder="••••••••" autocomplete="current-password"></div>
+        <div id="login-err" class="auth-err hidden"></div>
+        <button class="btn btn-primary w100" onclick="doLogin()">🔐 LOGIN</button>
+      </div>
+      <!-- Register -->
+      <div id="auth-register" class="auth-panel hidden">
+        <div class="input-group"><label>USERNAME</label>
+          <input id="reg-user" type="text" placeholder="choose a username" autocomplete="username"></div>
+        <div class="input-group"><label>DISPLAY NAME</label>
+          <input id="reg-display" type="text" placeholder="shown in auction" maxlength="20"></div>
+        <div class="input-group"><label>PASSWORD</label>
+          <input id="reg-pass" type="password" placeholder="••••••••" autocomplete="new-password"></div>
+        <div id="reg-err" class="auth-err hidden"></div>
+        <button class="btn btn-primary w100" onclick="doRegister()">✅ CREATE ACCOUNT</button>
+      </div>
+      <p class="auth-note">Login saves your game records. Skip to play as guest.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── LOBBY ── -->
+<div id="screen-lobby" class="screen">
+  <div class="lobby-bg"></div>
+  <div class="lobby-wrap">
+    <div class="lobby-top">
+      <div class="logo-area">
+        <div class="trophy-icon">🏆</div>
+        <h1 class="logo-title">IPL MEGA<br><span>AUCTION</span></h1>
+        <p class="logo-sub">2025 SEASON</p>
+      </div>
+      <div id="user-badge" class="user-badge hidden">
+        <span id="user-badge-name"></span>
+        <button onclick="showProfile()" class="badge-btn">📊</button>
+        <button onclick="logout()" class="badge-btn">↩</button>
+      </div>
+    </div>
+    <div class="lobby-card">
+      <div class="input-group"><label>YOUR TEAM NAME</label>
+        <input id="inp-name" type="text" placeholder="e.g. Mumbai Mavericks" maxlength="20" autocomplete="off">
+      </div>
+      <div class="lobby-actions">
+        <button class="btn btn-primary" onclick="createRoom()"><span>🏟️</span> CREATE ROOM</button>
+        <div class="divider">— OR JOIN —</div>
+        <div class="join-row">
+          <input id="inp-room" type="text" placeholder="ROOM CODE" maxlength="6" style="text-transform:uppercase;letter-spacing:4px">
+          <button class="btn btn-secondary" onclick="joinRoom()">JOIN</button>
+        </div>
+      </div>
+      <div id="lobby-rooms" class="active-rooms"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── PROFILE ── -->
+<div id="screen-profile" class="screen">
+  <div class="profile-wrap">
+    <div class="profile-header">
+      <button class="back-btn" onclick="showScreen('screen-lobby')">← BACK</button>
+      <h2 class="profile-title">MY PROFILE</h2>
+    </div>
+    <div id="profile-body" class="profile-body"></div>
+  </div>
+</div>
+
+<!-- ── WAITING ── -->
+<div id="screen-waiting" class="screen">
+  <div class="waiting-bg"></div>
+  <div class="waiting-wrap">
+    <div class="room-header">
+      <div class="room-badge">ROOM: <span id="disp-room-id">------</span></div>
+      <div class="room-share">Share this code to invite friends</div>
+    </div>
+    <h2 class="waiting-title">TEAMS JOINING…</h2>
+    <div id="teams-waiting" class="teams-grid-wait"></div>
+    <div id="host-controls" class="host-ctrl hidden">
+      <p class="host-hint">You are the host · <span id="team-count">1</span> team(s) ready</p>
+      <button class="btn btn-start pulse" onclick="startAuction()">🚀 START AUCTION</button>
+    </div>
+    <div id="guest-wait" class="guest-wait hidden">
+      <div class="spinner"></div>
+      <p>Waiting for host to start…</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── AUCTION ── -->
+<div id="screen-auction" class="screen">
+  <div class="auction-layout">
+    <aside class="teams-panel">
+      <div class="panel-header">FRANCHISES</div>
+      <div id="teams-list" class="teams-list"></div>
+    </aside>
+    <main class="auction-main">
+      <div class="auction-topbar">
+        <div class="room-pill">🏟️ <span id="top-room-id"></span></div>
+        <div class="progress-bar-wrap">
+          <div id="progress-bar" class="progress-bar"></div>
+          <span id="progress-text" class="progress-text">0 / 0</span>
+        </div>
+        <div class="budget-pill">💰 <span id="your-budget">₹100 Cr</span></div>
+      </div>
+      <div id="player-stage" class="player-stage">
+        <div class="stage-idle">
+          <div style="font-size:56px;opacity:.25">🏏</div>
+          <p style="color:var(--dim);margin-top:10px">Auction starts soon…</p>
+        </div>
+      </div>
+      <div id="bid-section" class="bid-section hidden">
+        <div class="current-bid-display">
+          <div class="bid-label">CURRENT BID</div>
+          <div id="bid-amount" class="bid-amount">₹0</div>
+          <div id="bid-leader" class="bid-leader">No bids yet</div>
+        </div>
+        <div class="bid-buttons">
+          <button class="bid-btn" onclick="placeBid(10)">+₹10L</button>
+          <button class="bid-btn" onclick="placeBid(50)">+₹50L</button>
+          <button class="bid-btn bid-btn-red" onclick="placeBid(100)">+₹1Cr</button>
+          <button class="bid-btn bid-btn-gold" onclick="placeBid(500)">+₹5Cr</button>
+        </div>
+      </div>
+      <div id="host-next" class="host-next hidden">
+        <button class="btn btn-next" onclick="nextPlayer()">⏭ NEXT PLAYER</button>
+        <button class="btn btn-stop" onclick="stopAuction()">🏁 END AUCTION</button>
+      </div>
+    </main>
+    <aside class="feed-panel">
+      <div class="panel-header">LIVE FEED</div>
+      <div id="live-feed" class="live-feed"></div>
+      <div class="timer-wrap">
+        <svg class="timer-svg" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="42" class="timer-track"/>
+          <circle id="timer-ring" cx="50" cy="50" r="42" class="timer-ring"/>
+        </svg>
+        <div id="timer-text" class="timer-text">--</div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Mobile bottom bar (replaces feed/teams on small screens) -->
+  <div class="mobile-bar hidden-desktop">
+    <button class="mbar-btn" onclick="toggleMobilePanel('m-teams')">👥 Teams</button>
+    <button class="mbar-btn" onclick="toggleMobilePanel('m-feed')">📢 Feed</button>
+    <button class="mbar-btn" onclick="toggleDrawer()">🏅 Squad ▲</button>
+  </div>
+  <div id="m-teams" class="mobile-panel hidden">
+    <div class="mp-header">FRANCHISES <button onclick="closeMobilePanel('m-teams')">✕</button></div>
+    <div id="m-teams-list" class="teams-list" style="padding:8px"></div>
+  </div>
+  <div id="m-feed" class="mobile-panel hidden">
+    <div class="mp-header">LIVE FEED <button onclick="closeMobilePanel('m-feed')">✕</button></div>
+    <div id="m-feed-list" class="live-feed" style="padding:8px;max-height:250px"></div>
+  </div>
+
+  <!-- Drawer -->
+  <div id="drawer" class="drawer">
+    <div class="drawer-handle" onclick="toggleDrawer()">
+      <div class="drawer-handle-bar"></div>
+      <div class="drawer-handle-labels">
+        <span class="dh-label">🏅 MY SQUAD <span id="squad-count" class="tab-badge">0</span></span>
+        <span class="dh-sep">·</span>
+        <span class="dh-label">📋 UPCOMING <span id="upcoming-count" class="tab-badge">0</span></span>
+        <span class="dh-chevron">▲</span>
+      </div>
+    </div>
+    <div class="drawer-body">
+      <div class="drawer-tabs">
+        <button class="drawer-tab active" onclick="switchTab(this,'my-squad')">🏅 MY SQUAD</button>
+        <button class="drawer-tab" onclick="switchTab(this,'upcoming')">📋 UPCOMING</button>
+      </div>
+      <div id="my-squad" class="drawer-panel active">
+        <div id="squad-list" class="squad-list"><div class="drawer-empty">No players won yet</div></div>
+      </div>
+      <div id="upcoming" class="drawer-panel">
+        <div id="upcoming-list" class="upcoming-list"><div class="drawer-empty">Loading…</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── FINISHED ── -->
+<div id="screen-finished" class="screen">
+  <div class="finished-hero">
+    <div class="trophy-big">🏆</div>
+    <h1 class="finished-title">AUCTION COMPLETE!</h1>
+  </div>
+  <div class="finished-tabs">
+    <button class="fin-tab active" onclick="finTab(this,'fin-squads')">🏏 SQUADS</button>
+    <button class="fin-tab" onclick="finTab(this,'fin-formation')">📐 FORMATION</button>
+    <button class="fin-tab" onclick="finTab(this,'fin-leaderboard')">🏆 LEADERBOARD</button>
+  </div>
+  <div id="fin-squads"      class="fin-section active"><div id="squads-grid"       class="squads-grid"></div></div>
+  <div id="fin-formation"   class="fin-section">       <div id="formation-grid"    class="formation-grid"></div></div>
+  <div id="fin-leaderboard" class="fin-section">       <div id="leaderboard-wrap"  class="leaderboard"></div></div>
+  <div style="text-align:center;padding:24px">
+    <button class="btn btn-primary" onclick="location.reload()">🔄 NEW AUCTION</button>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="/static/js/main.js"></script>
+</body>
+</html>

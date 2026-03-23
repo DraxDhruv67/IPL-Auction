@@ -1,0 +1,32 @@
+{
+  "draxdrakes3@gmail.com": {
+    "username": "draxdrakes3@gmail.com",
+    "display": "Draxx",
+    "password": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
+    "created": "2026-03-23",
+    "records": [
+      {
+        "room_id": "C9F02F",
+        "date": "2026-03-23 19:43",
+        "team_name": "Draxx",
+        "budget_left": 9620,
+        "players_won": 2,
+        "total_spend": 380,
+        "squad": [
+          {
+            "name": "Sai Sudharsan",
+            "role": "Batsman",
+            "price": 300
+          },
+          {
+            "name": "Rahul Tripathi",
+            "role": "Batsman",
+            "price": 80
+          }
+        ],
+        "players_total": 129,
+        "sold_count": 4
+      }
+    ]
+  }
+}

@@ -1,0 +1,355 @@
+/* IPL MEGA AUCTION 2025 */
+const socket = io();
+
+let mySid='', myName='', myRoomId='', isHost=false, roomState=null;
+let currentUser = JSON.parse(localStorage.getItem('ipl_user') || 'null');
+const TIMER_MAX = 20;
+
+/* ── Audio ── */
+let actx;
+function _audio(){if(!actx)actx=new(window.AudioContext||window.webkitAudioContext)();}
+function beep(f,d,t='sine',v=.22){try{_audio();const o=actx.createOscillator(),g=actx.createGain();o.connect(g);g.connect(actx.destination);o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,actx.currentTime);g.gain.exponentialRampToValueAtTime(.001,actx.currentTime+d);o.start();o.stop(actx.currentTime+d);}catch(e){}}
+const sndBid=()=>beep(660,.08,'square',.18);
+const sndNew=()=>[400,530,720].forEach((f,i)=>setTimeout(()=>beep(f,.12,'sine',.22),i*80));
+const sndSold=()=>[500,700,900,700].forEach((f,i)=>setTimeout(()=>beep(f,.15,'triangle',.28),i*90));
+const sndUnsold=()=>[400,300,200].forEach((f,i)=>setTimeout(()=>beep(f,.12,'sawtooth',.18),i*90));
+const sndUrgent=()=>beep(900,.04,'square',.12);
+
+/* ── Utils ── */
+function fmt(l){if(l==null)return'—';if(l>=100)return`₹${(l/100).toFixed(l%100===0?0:1)} Cr`;return`₹${l} L`;}
+const ROLE_CSS={Batsman:'role-bat',Bowler:'role-bowl','All-Rounder':'role-ar','Wicket-Keeper':'role-wk'};
+const ROLE_EMOJI={Batsman:'🏏',Bowler:'🎯','All-Rounder':'⚡','Wicket-Keeper':'🧤'};
+const ROLE_ORDER=['Batsman','Wicket-Keeper','All-Rounder','Bowler'];
+const ROLE_COL={Batsman:'bat','Wicket-Keeper':'wk','All-Rounder':'ar',Bowler:'bowl'};
+function $id(id){return document.getElementById(id);}
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$id(id).classList.add('active');}
+function toast(msg,type='info'){const c=$id('toast-container'),d=document.createElement('div');d.className=`toast ${type}`;d.textContent=msg;c.appendChild(d);setTimeout(()=>{d.style.animation='toastOut .3s ease forwards';setTimeout(()=>d.remove(),300);},3000);}
+function feed(msg,type='info'){const f=$id('live-feed');if(!f)return;const el=document.createElement('div');el.className=`feed-item ${type}`;el.textContent=msg;f.insertBefore(el,f.firstChild);while(f.children.length>60)f.removeChild(f.lastChild);
+  // mirror to mobile feed
+  const mf=$id('m-feed-list');if(mf){const mel=document.createElement('div');mel.className=`feed-item ${type}`;mel.textContent=msg;mf.insertBefore(mel,mf.firstChild);while(mf.children.length>30)mf.removeChild(mf.lastChild);}
+}
+
+/* ══════════════════════════════════════
+   AUTH
+   ══════════════════════════════════════ */
+function authTab(tab){
+  document.querySelectorAll('.auth-tab').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.auth-panel').forEach(p=>p.classList.add('hidden'));
+  event.target.classList.add('active');
+  $id(`auth-${tab}`).classList.remove('hidden');
+}
+function skipAuth(){showScreen('screen-lobby');updateUserBadge();}
+async function doLogin(){
+  const user=($id('login-user').value||'').trim();
+  const pass=($id('login-pass').value||'').trim();
+  if(!user||!pass){showAuthErr('login','Fill in all fields');return;}
+  const res=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:user,password:pass})});
+  const data=await res.json();
+  if(!data.ok){showAuthErr('login',data.msg);return;}
+  currentUser=data.user;
+  localStorage.setItem('ipl_user',JSON.stringify(currentUser));
+  showScreen('screen-lobby');updateUserBadge();
+  toast(`Welcome back, ${currentUser.display}! 🏏`,'success');
+}
+async function doRegister(){
+  const user=($id('reg-user').value||'').trim();
+  const disp=($id('reg-display').value||'').trim()||user;
+  const pass=($id('reg-pass').value||'').trim();
+  if(!user||!pass){showAuthErr('register','Fill in all fields');return;}
+  const res=await fetch('/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:user,password:pass,display:disp})});
+  const data=await res.json();
+  if(!data.ok){showAuthErr('register',data.msg);return;}
+  currentUser=data.user;
+  localStorage.setItem('ipl_user',JSON.stringify(currentUser));
+  showScreen('screen-lobby');updateUserBadge();
+  toast(`Account created! Welcome, ${currentUser.display} 🎉`,'success');
+}
+function showAuthErr(panel,msg){const el=$id(`${panel}-err`);el.textContent=msg;el.classList.remove('hidden');setTimeout(()=>el.classList.add('hidden'),4000);}
+function logout(){currentUser=null;localStorage.removeItem('ipl_user');showScreen('screen-auth');updateUserBadge();}
+function updateUserBadge(){
+  const badge=$id('user-badge'),name=$id('user-badge-name');
+  if(currentUser&&badge){badge.classList.remove('hidden');if(name)name.textContent=currentUser.display||currentUser.username;}
+  else if(badge) badge.classList.add('hidden');
+  // pre-fill team name from display name
+  if(currentUser){const inp=$id('inp-name');if(inp&&!inp.value)inp.value=currentUser.display||'';}
+}
+async function showProfile(){
+  if(!currentUser)return;
+  showScreen('screen-profile');
+  const res=await fetch(`/api/profile/${currentUser.username}`);
+  const data=await res.json();
+  if(!data.ok){$id('profile-body').innerHTML='<p style="color:var(--dim);padding:20px">Failed to load profile</p>';return;}
+  const recs=data.records||[];
+  const totalSpend=recs.reduce((s,r)=>s+(r.total_spend||0),0);
+  const totalPlayers=recs.reduce((s,r)=>s+(r.players_won||0),0);
+  $id('profile-body').innerHTML=`
+    <div class="profile-stat-row">
+      <div class="pstat"><div class="pstat-val">${recs.length}</div><div class="pstat-label">AUCTIONS</div></div>
+      <div class="pstat"><div class="pstat-val">${totalPlayers}</div><div class="pstat-label">PLAYERS WON</div></div>
+      <div class="pstat"><div class="pstat-val">${fmt(totalSpend)}</div><div class="pstat-label">TOTAL SPENT</div></div>
+    </div>
+    <h3 style="font-family:var(--fd);font-size:20px;letter-spacing:2px;color:var(--gold);margin:4px 0">RECENT AUCTIONS</h3>
+    ${recs.length?recs.map(r=>`
+      <div class="record-card">
+        <div class="record-date">${r.date} · Room ${r.room_id}</div>
+        <div class="record-team">${r.team_name}</div>
+        <div class="record-stats">
+          <div class="rstat">Players won: <span>${r.players_won}</span></div>
+          <div class="rstat">Spent: <span>${fmt(r.total_spend)}</span></div>
+          <div class="rstat">Left: <span>${fmt(r.budget_left)}</span></div>
+        </div>
+        ${r.squad&&r.squad.length?`<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px">
+          ${r.squad.slice(0,6).map(p=>`<span style="background:var(--bg3);border:1px solid var(--bord);border-radius:5px;padding:2px 8px;font-size:11px">${p.name}</span>`).join('')}
+          ${r.squad.length>6?`<span style="color:var(--dim);font-size:11px;align-self:center">+${r.squad.length-6} more</span>`:''}
+        </div>`:''}
+      </div>`).join(''):'<p style="color:var(--dim);font-size:13px">No auctions yet. Play and your records will appear here!</p>'}`;
+}
+
+/* ══════════════════════════════════════
+   LOBBY
+   ══════════════════════════════════════ */
+function createRoom(){
+  myName=($id('inp-name').value||'').trim();
+  if(!myName){toast('Enter a team name!','error');return;}
+  _audio();
+  socket.emit('create_room',{name:myName,username:currentUser?.username||''});
+}
+function joinRoom(code){
+  myName=($id('inp-name').value||'').trim();
+  code=(code||$id('inp-room').value||'').trim().toUpperCase();
+  if(!myName){toast('Enter a team name!','error');return;}
+  if(!code){toast('Enter a room code!','error');return;}
+  _audio();
+  socket.emit('join_room_req',{name:myName,room_id:code,username:currentUser?.username||''});
+}
+function startAuction(){socket.emit('start_auction',{});}
+function nextPlayer(){socket.emit('next_player',{});}
+function placeBid(amt){socket.emit('place_bid',{amount:amt});}
+function stopAuction(){if(!confirm('End the auction now and go to results?'))return;socket.emit('stop_auction',{});}
+
+/* ══════════════════════════════════════
+   RENDER
+   ══════════════════════════════════════ */
+function renderWaitTeams(teams){
+  const el=$id('teams-waiting');if(!el)return;
+  el.innerHTML=teams.map(t=>{const ini=t.name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);return`<div class="team-card-wait"><div class="team-avatar" style="background:${t.color}">${ini}</div><div class="name">${t.name}</div></div>`;}).join('');
+  const cnt=$id('team-count');if(cnt)cnt.textContent=teams.length;
+}
+function renderTeamsPanel(teams){
+  const html=teams.map(t=>{const bidding=roomState&&roomState.current_bidder_sid===t.sid,me=t.sid===mySid;return`<div class="team-row${bidding?' bidding':''}${me?' my-team':''}"><div class="t-name">${me?'★ ':''}${t.name}</div><div class="t-budget">${fmt(t.budget)}</div><div class="t-count">🏏 ${t.players.length}</div></div>`;}).join('');
+  [$id('teams-list'),$id('m-teams-list')].forEach(el=>{if(el)el.innerHTML=html;});
+}
+function renderPlayerCard(player){
+  const cls=ROLE_CSS[player.role]||'role-bat',emoji=ROLE_EMOJI[player.role]||'🏏';
+  const setHdr=player._set_start?`<div class="set-header-banner">${player._set_label||''}</div>`:'';
+  $id('player-stage').innerHTML=`${setHdr}
+    <div class="player-card">
+      <div class="player-number">${player.id||''}</div>
+      <div class="player-role-badge ${cls}">${emoji} ${player.role}</div>
+      <div class="player-name">${player.name}</div>
+      <div class="player-meta">
+        <span class="meta-item">🌍 ${player.nationality||'India'}</span>
+        ${player.team?`<span class="meta-item">🏟️ ${player.team}</span>`:''}
+        ${player.rating?`<span class="meta-item">⭐ ${player.rating}</span>`:''}
+      </div>
+      <div class="player-base-price"><div class="base-price-label">BASE PRICE</div><div class="base-price-val">${fmt(player.base_price)}</div></div>
+    </div>
+    <div id="result-banner" class="result-banner hidden"></div>`;
+}
+function updateBid(bid,bidderName,bidderColor,bidderSid){
+  const amt=$id('bid-amount'),ldr=$id('bid-leader');if(!amt)return;
+  amt.textContent=fmt(bid);
+  if(bidderName){ldr.textContent=`🏅 ${bidderName}`;ldr.className='bid-leader active';ldr.style.color=bidderSid===mySid?'var(--green)':(bidderColor||'');}
+  else{ldr.textContent='No bids yet';ldr.className='bid-leader';ldr.style.color='';}
+  const w=amt.closest('.current-bid-display');if(w){w.classList.remove('bid-flash');void w.offsetWidth;w.classList.add('bid-flash');}
+}
+function updateTimer(t){
+  const ring=$id('timer-ring'),txt=$id('timer-text');if(!ring||!txt)return;
+  ring.style.strokeDashoffset=2*Math.PI*42*(1-Math.max(0,t)/TIMER_MAX);
+  txt.textContent=t>0?t:'0';
+  ring.classList.toggle('urgent',t>0&&t<=5);txt.classList.toggle('urgent',t>0&&t<=5);
+  if(t>0&&t<=5)sndUrgent();
+}
+function updateProgress(sold,total){
+  const bar=$id('progress-bar'),txt=$id('progress-text');if(!bar)return;
+  bar.style.width=total>0?(sold/total*100)+'%':'0%';if(txt)txt.textContent=`${sold} / ${total}`;
+}
+function updateMyBudget(){if(!roomState)return;const me=roomState.teams.find(t=>t.sid===mySid);if(me)$id('your-budget').textContent=fmt(me.budget);}
+function showBanner(html,cls){
+  const el=$id('result-banner');if(!el)return;
+  el.innerHTML=html;el.className=`result-banner ${cls}`;el.classList.remove('hidden');
+  const stage=$id('player-stage');if(stage)setTimeout(()=>stage.scrollTo({top:stage.scrollHeight,behavior:'smooth'}),60);
+}
+
+/* ══════════════════════════════════════
+   SOCKET EVENTS
+   ══════════════════════════════════════ */
+socket.on('connected',d=>{mySid=d.sid;});
+socket.on('room_joined',d=>{
+  roomState=d.room;myRoomId=d.room_id;mySid=d.your_sid;isHost=d.room.host_sid===mySid;
+  $id('disp-room-id').textContent=myRoomId;$id('top-room-id').textContent=myRoomId;
+  renderWaitTeams(d.room.teams);
+  $id('host-controls').classList.toggle('hidden',!isHost);
+  $id('guest-wait').classList.toggle('hidden',isHost);
+  showScreen('screen-waiting');
+});
+socket.on('room_update',d=>{
+  roomState=d;if(d.host_sid)isHost=d.host_sid===mySid;
+  if($id('screen-waiting').classList.contains('active'))renderWaitTeams(d.teams);
+  renderTeamsPanel(d.teams);updateMyBudget();
+  if(['sold','unsold'].includes(d.status)&&isHost)$id('host-next').classList.remove('hidden');
+});
+socket.on('notification',d=>{toast(d.msg,'info');feed(d.msg,'info');});
+socket.on('new_player',d=>{
+  roomState=d.room;showScreen('screen-auction');
+  $id('host-next').classList.add('hidden');
+  renderTeamsPanel(d.room.teams);renderPlayerCard(d.player);
+  updateBid(d.player.base_price,null,null,null);
+  updateProgress(d.room.sold_count,d.room.total_players);updateMyBudget();updateTimer(TIMER_MAX);
+  $id('bid-section').classList.remove('hidden');
+  const stage=$id('player-stage');if(stage)stage.scrollTop=0;
+  feed(`🆕 ${d.player.name} (${d.player.role})`,'new');sndNew();updateDrawer(d.room);
+});
+socket.on('bid_update',d=>{
+  roomState=d.room;updateBid(d.bid,d.bidder,d.bidder_color,d.bidder_sid);
+  updateTimer(d.timer);renderTeamsPanel(d.room.teams);
+  feed(`💰 ${d.bidder}: ${fmt(d.bid)}`,'bid');sndBid();
+});
+socket.on('timer_tick',d=>{updateTimer(d.timer);});
+socket.on('player_sold',d=>{
+  roomState=d.room;renderTeamsPanel(d.room.teams);updateProgress(d.room.sold_count,d.room.total_players);updateMyBudget();
+  $id('bid-section').classList.add('hidden');updateTimer(0);
+  showBanner(`<div style="font-size:28px;margin-bottom:5px">🎉 SOLD!</div><div style="font-family:var(--fd);font-size:22px;color:#fff">${d.player.name}</div><div style="font-family:var(--fm);font-size:24px;color:var(--gold);margin:5px 0">${fmt(d.price)}</div><div style="font-size:13px;font-weight:700;color:${d.color||'var(--green)'}">▶ ${d.team}</div>`,'sold-banner');
+  feed(`✅ ${d.player.name} → ${d.team} @ ${fmt(d.price)}`,'sold');sndSold();updateDrawer(d.room);
+  if(isHost)$id('host-next').classList.remove('hidden');
+});
+socket.on('player_unsold',d=>{
+  roomState=d.room;$id('bid-section').classList.add('hidden');updateTimer(0);
+  showBanner(`<div style="font-size:28px;margin-bottom:5px">❌ UNSOLD</div><div style="font-family:var(--fd);font-size:22px;color:var(--dim)">${d.player.name}</div><div style="color:var(--red);font-size:12px;margin-top:5px">No bids placed</div>`,'unsold-banner');
+  feed(`❌ ${d.player.name} — unsold`,'info');sndUnsold();updateDrawer(d.room);
+  if(isHost)$id('host-next').classList.remove('hidden');
+});
+socket.on('auction_finished',d=>{
+  showScreen('screen-finished');
+  setTimeout(()=>{renderSquads(d.room.teams);renderFormation(d.room.teams);renderLeaderboard(d.room.teams);},120);
+});
+socket.on('error',d=>{toast('⚠️ '+d.msg,'error');});
+socket.on('full_state',d=>{
+  roomState=d;if(d.host_sid)isHost=d.host_sid===mySid;renderTeamsPanel(d.teams);updateMyBudget();
+  if(d.status==='bidding'&&d.current_player){showScreen('screen-auction');renderPlayerCard(d.current_player);updateBid(d.current_bid,d.current_bidder_name,null,d.current_bidder_sid);updateTimer(d.timer);updateProgress(d.sold_count,d.total_players);$id('bid-section').classList.remove('hidden');$id('host-next').classList.add('hidden');updateDrawer(d);}
+});
+
+/* ── Active rooms ── */
+function loadRooms(){fetch('/api/rooms').then(r=>r.json()).then(list=>{const el=$id('lobby-rooms');if(!el)return;if(!list.length){el.innerHTML='';return;}el.innerHTML=`<div style="font-size:10px;color:var(--dim);letter-spacing:3px;margin-bottom:6px;font-family:var(--fm)">ACTIVE ROOMS</div>`+list.map(r=>`<div class="room-item" onclick="joinRoom('${r.id}')"><span>🏟️ <b>${r.host}</b></span><span style="color:var(--dim);font-size:11px">${r.teams} teams · ${r.id}</span></div>`).join('');}).catch(()=>{});}
+setInterval(()=>{if($id('screen-lobby')&&$id('screen-lobby').classList.contains('active'))loadRooms();},5000);
+loadRooms();
+
+/* ── Keyboard ── */
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  if(!$id('screen-auction').classList.contains('active'))return;
+  if(e.key==='1')placeBid(10);if(e.key==='2')placeBid(50);if(e.key==='3')placeBid(100);if(e.key==='4')placeBid(500);
+  if((e.key==='n'||e.key==='N')&&isHost)nextPlayer();
+});
+$id('inp-name').addEventListener('keydown',e=>{if(e.key==='Enter')createRoom();});
+$id('inp-room').addEventListener('keydown',e=>{if(e.key==='Enter')joinRoom();});
+
+/* ══════════════════════════════════════
+   MOBILE PANELS
+   ══════════════════════════════════════ */
+let activeMobilePanel=null;
+function toggleMobilePanel(id){
+  if(activeMobilePanel===id){closeMobilePanel(id);return;}
+  if(activeMobilePanel)closeMobilePanel(activeMobilePanel);
+  const el=$id(id);if(el){el.classList.remove('hidden');el.classList.add('visible');}
+  activeMobilePanel=id;
+}
+function closeMobilePanel(id){const el=$id(id);if(el){el.classList.remove('visible');el.classList.add('hidden');}activeMobilePanel=null;}
+// Close mobile panels when tapping outside
+document.addEventListener('click',e=>{
+  if(activeMobilePanel&&!e.target.closest('.mobile-panel')&&!e.target.closest('.mbar-btn')){closeMobilePanel(activeMobilePanel);}
+});
+
+/* ══════════════════════════════════════
+   DRAWER
+   ══════════════════════════════════════ */
+let drawerOpen=false;
+document.addEventListener('DOMContentLoaded',()=>{
+  const d=$id('drawer');if(!d)return;
+  let y0=0;
+  d.addEventListener('touchstart',e=>{y0=e.touches[0].clientY;},{passive:true});
+  d.addEventListener('touchend',e=>{const dy=y0-e.changedTouches[0].clientY;if(dy>40)openDrawer();if(dy<-40)closeDrawer();},{passive:true});
+});
+function openDrawer(){const d=$id('drawer');if(d){d.classList.add('open');drawerOpen=true;}}
+function closeDrawer(){const d=$id('drawer');if(d){d.classList.remove('open');drawerOpen=false;}}
+function toggleDrawer(){drawerOpen?closeDrawer():openDrawer();}
+function switchTab(btn,panelId){
+  document.querySelectorAll('.drawer-tab').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.drawer-panel').forEach(p=>p.classList.remove('active'));
+  btn.classList.add('active');$id(panelId).classList.add('active');openDrawer();
+}
+function renderMySquad(room){
+  const me=room.teams.find(t=>t.sid===mySid),el=$id('squad-list'),badge=$id('squad-count');if(!el)return;
+  if(!me||!me.players.length){el.innerHTML='<div class="drawer-empty">No players won yet</div>';if(badge)badge.textContent='0';return;}
+  if(badge)badge.textContent=me.players.length;
+  const grouped={};ROLE_ORDER.forEach(r=>grouped[r]=[]);me.players.forEach(p=>{(grouped[p.role]=grouped[p.role]||[]).push(p);});
+  let html='';ROLE_ORDER.forEach(role=>{const ps=grouped[role]||[];if(!ps.length)return;html+=`<div class="squad-role-sep">${ROLE_EMOJI[role]} ${role}</div>`;ps.forEach(p=>{html+=`<div class="squad-card"><div class="sc-name">${p.name}</div><div class="sc-price">${fmt(p.sold_price)}</div></div>`;});});
+  el.innerHTML=html;
+  const h=document.querySelector('.drawer-handle');if(h&&!drawerOpen){h.classList.remove('drawer-pulse');void h.offsetWidth;h.classList.add('drawer-pulse');setTimeout(()=>h.classList.remove('drawer-pulse'),1000);}
+}
+function renderUpcoming(room){
+  const list=room.upcoming_players||[],el=$id('upcoming-list'),badge=$id('upcoming-count');if(!el)return;
+  if(!list.length){el.innerHTML='<div class="drawer-empty">No more players</div>';if(badge)badge.textContent='0';return;}
+  if(badge)badge.textContent=room.players_left>0?room.players_left:list.length;
+  el.innerHTML=list.map((p,i)=>`<div class="upcoming-card${i===0?' next-up':''}">${i===0?'<div class="next-up-label">NEXT</div>':''}<div class="uc-name">${p.name}</div><div class="uc-role">${ROLE_EMOJI[p.role]||''} ${p.role}</div><div class="uc-price">${fmt(p.base_price)}</div>${p._set_start?`<div class="uc-set">${p._set_label||''}</div>`:''}</div>`).join('');
+}
+function updateDrawer(room){renderMySquad(room);renderUpcoming(room);}
+
+/* ══════════════════════════════════════
+   FINISHED SCREEN
+   ══════════════════════════════════════ */
+function finTab(btn,sid){document.querySelectorAll('.fin-tab').forEach(b=>b.classList.remove('active'));document.querySelectorAll('.fin-section').forEach(s=>s.classList.remove('active'));btn.classList.add('active');$id(sid).classList.add('active');}
+function groupByRole(players){const g={Batsman:[],'Wicket-Keeper':[],'All-Rounder':[],Bowler:[]};players.forEach(p=>{(g[p.role]=g[p.role]||[]).push(p);});return g;}
+function renderSquads(teams){
+  const el=$id('squads-grid');if(!el)return;
+  el.innerHTML=teams.map(t=>{
+    if(!t.players||!t.players.length)return`<div class="squad-full-card"><div class="squad-full-header" style="border-top:3px solid ${t.color}"><div class="squad-full-name" style="color:${t.color}">${t.name}</div><div class="squad-full-budget">${fmt(t.budget)} left</div></div><div style="padding:14px;color:var(--dim);font-size:13px">No players</div></div>`;
+    const g=groupByRole(t.players);
+    const blocks=ROLE_ORDER.map(role=>{const ps=g[role]||[];if(!ps.length)return'';return`<div class="squad-role-group"><div class="squad-role-label ${ROLE_COL[role]}">${ROLE_EMOJI[role]} ${role}s (${ps.length})</div>${ps.map(p=>`<div class="squad-player-row"><span>${p.name}</span><span class="sp-price">${fmt(p.sold_price)}</span></div>`).join('')}</div>`;}).join('');
+    return`<div class="squad-full-card"><div class="squad-full-header" style="border-top:3px solid ${t.color}"><div class="squad-full-name" style="color:${t.color}">${t.name}</div><div class="squad-full-budget">💰 ${fmt(t.budget)} · 🏏 ${t.players.length}</div></div>${blocks}</div>`;
+  }).join('');
+}
+const KR={'Virat Kohli':90,'Rohit Sharma':86,'Jasprit Bumrah':90,'Rashid Khan':88,'MS Dhoni':85,'Hardik Pandya':82,'Ravindra Jadeja':84,'Rishabh Pant':84,'Jos Buttler':83,'Pat Cummins':83,'Travis Head':82,'Andre Russell':82,'Mitchell Starc':83,'Yashasvi Jaiswal':82,'Shubman Gill':83,'Heinrich Klaasen':82,'Suryakumar Yadav':84,'KL Rahul':81,'Axar Patel':78,'Kuldeep Yadav':79,'Mohammed Shami':81,'Kagiso Rabada':82,'Trent Boult':79,'Yuzvendra Chahal':77,'Sam Curran':77,'Glenn Maxwell':79,'Sunil Narine':80,'Ben Stokes':81};
+function pRating(p){if(p.rating&&p.rating>60)return p.rating;if(KR[p.name])return KR[p.name];const b={Batsman:65,'Wicket-Keeper':65,'All-Rounder':67,Bowler:65}[p.role]||65;return Math.min(88,b+Math.min(15,Math.floor((p.sold_price||0)/100)));}
+function analyseTeam(team){
+  if(!team.players||!team.players.length)return null;
+  const g=groupByRole(team.players);
+  const bats=g.Batsman||[],wks=g['Wicket-Keeper']||[],ars=g['All-Rounder']||[],bowls=g.Bowler||[];
+  const ranked=r=>[...r].sort((a,b)=>pRating(b)-pRating(a));
+  const wkP=ranked(wks).slice(0,1),batP=ranked(bats).slice(0,4),arP=ranked(ars).slice(0,2),bowlP=ranked(bowls).slice(0,4);
+  let xi=[...wkP,...batP,...arP,...bowlP];const used=new Set(xi.map(p=>p.name));
+  xi.push(...ranked(team.players.filter(p=>!used.has(p.name))).slice(0,11-xi.length));xi=xi.slice(0,11);
+  const avg=xi.length?Math.round(xi.reduce((s,p)=>s+pRating(p),0)/xi.length):0;
+  const overall=Math.min(99,(bats.length>=4?25:Math.round(bats.length/4*25))+(bowls.length>=4?25:Math.round(bowls.length/4*25))+(ars.length>=2?20:Math.round(ars.length/2*20))+(wks.length>=1?15:0)+Math.round(Math.max(0,avg-65)/25*15));
+  return{xi,wkP,batP,arP,bowlP,avg,overall,counts:{bat:bats.length,wk:wks.length,ar:ars.length,bowl:bowls.length}};
+}
+function rColor(r){return r>=80?'#06D6A0':r>=70?'#FFD700':'#f4a261';}
+function pRow(pl,cls,lbl){if(!pl.length)return'';return`<div class="pitch-row">${pl.map(p=>`<div class="pitch-player ${cls}"><div>${p.name.split(' ').slice(-1)[0]}</div><div class="pitch-label">${lbl}</div></div>`).join('')}</div>`;}
+function renderFormation(teams){
+  const el=$id('formation-grid');if(!el)return;
+  el.innerHTML=teams.map(t=>{
+    const a=analyseTeam(t);if(!a)return`<div class="formation-card"><div class="formation-card-header" style="border-top:3px solid ${t.color}"><div class="formation-card-name" style="color:${t.color}">${t.name}</div></div><div style="padding:14px;color:var(--dim);font-size:13px">No players</div></div>`;
+    const bar=Math.round(a.overall/99*100);
+    return`<div class="formation-card"><div class="formation-card-header" style="border-top:3px solid ${t.color}"><div class="formation-card-name" style="color:${t.color}">${t.name}</div><div class="formation-xi-badge">BEST XI · ${a.xi.length}</div></div><div class="pitch-wrap"><div class="pitch-lines"></div><div class="pitch-center"></div>${pRow(a.bowlP,'bowl','BOWL')}${pRow(a.arP,'ar','AR')}${pRow(a.batP,'bat','BAT')}${pRow(a.wkP,'wk','WK')}</div><div class="formation-stats"><div class="fstat"><div class="fstat-val">${a.counts.bat}</div><div class="fstat-label">BAT</div></div><div class="fstat"><div class="fstat-val">${a.counts.wk}</div><div class="fstat-label">WK</div></div><div class="fstat"><div class="fstat-val">${a.counts.ar}</div><div class="fstat-label">AR</div></div><div class="fstat"><div class="fstat-val">${a.counts.bowl}</div><div class="fstat-label">BOWL</div></div></div><div class="overall-rating"><div class="or-label">RATING</div><div class="or-bar"><div class="or-fill" style="width:${bar}%;background:${rColor(a.overall)}"></div></div><div class="or-val" style="color:${rColor(a.overall)}">${a.overall}</div></div></div>`;
+  }).join('');
+}
+function renderLeaderboard(teams){
+  const ranked=teams.map(t=>({t,a:analyseTeam(t)})).map(({t,a})=>({name:t.name,color:t.color,budget:t.budget,players:t.players.length,rating:a?a.overall:0,avg:a?a.avg:0,xi:a?a.xi.length:0})).sort((a,b)=>b.rating-a.rating||b.avg-a.avg);
+  const medals=['🥇','🥈','🥉'],maxR=Math.max(...ranked.map(r=>r.rating),1);
+  const el=$id('leaderboard-wrap');if(!el)return;
+  el.innerHTML=`<div class="lb-header"><div>#</div><div>TEAM</div><div>PLAYERS</div><div>AVG ⭐</div><div>SCORE</div></div>`+ranked.map((r,i)=>`<div class="lb-row${i<3?` rank-${i+1}`:''}" style="animation-delay:${i*.06}s"><div class="lb-rank${i<3?` r${i+1}`:''}"> ${i<3?medals[i]:i+1}</div><div class="lb-team"><span style="color:${r.color}">${r.name}</span><small>${fmt(r.budget)} left · ${r.xi} XI</small></div><div class="lb-stat">${r.players}</div><div class="lb-stat">${r.avg||'—'}</div><div class="lb-rating"><div class="rating-val" style="color:${rColor(r.rating)}">${r.rating||'—'}</div><div class="rating-bar"><div class="rating-fill" style="width:${Math.round(r.rating/maxR*100)}%;background:${rColor(r.rating)}"></div></div></div></div>`).join('');
+}
+
+/* ── Init ── */
+// If already logged in from previous session, skip auth
+if(currentUser){showScreen('screen-lobby');updateUserBadge();}
