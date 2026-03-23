@@ -6,6 +6,28 @@
     "created": "2026-03-23",
     "records": [
       {
+        "room_id": "31AC7F",
+        "date": "2026-03-23 23:03",
+        "team_name": "Draxx",
+        "budget_left": 8895,
+        "players_won": 2,
+        "total_spend": 1105,
+        "squad": [
+          {
+            "name": "Dewald Brevis",
+            "role": "Batsman",
+            "price": 905
+          },
+          {
+            "name": "Faf du Plessis",
+            "role": "Batsman",
+            "price": 200
+          }
+        ],
+        "players_total": 129,
+        "sold_count": 3
+      },
+      {
         "room_id": "C9F02F",
         "date": "2026-03-23 19:43",
         "team_name": "Draxx",
@@ -26,6 +48,31 @@
         ],
         "players_total": 129,
         "sold_count": 4
+      }
+    ]
+  },
+  "shlok77": {
+    "username": "shlok77",
+    "display": "csk",
+    "password": "8bb0cf6eb9b17d0f7d22b456f121257dc1254e1f01665370476383ea776df414",
+    "created": "2026-03-23",
+    "records": [
+      {
+        "room_id": "31AC7F",
+        "date": "2026-03-23 23:03",
+        "team_name": "csk",
+        "budget_left": 9300,
+        "players_won": 1,
+        "total_spend": 700,
+        "squad": [
+          {
+            "name": "Jake Fraser-McGurk",
+            "role": "Batsman",
+            "price": 700
+          }
+        ],
+        "players_total": 129,
+        "sold_count": 3
       }
     ]
   }
