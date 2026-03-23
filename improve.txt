@@ -1,0 +1,8 @@
+so program is working fine 
+2- the timer should reset to 30 sec after someone bids
+3- there should be option for players to opt-out of the auction 
+4- clean ui , too much information is there on current gui 
+6- before entering the game the host will decide the budget for every player who joins 
+7- host has the authority to end the auction 
+8- whenever player joins or buys a player assign that player memory location to save players list bought by him with price 
+9- everytime players buys a player , minus that amount from his budget
