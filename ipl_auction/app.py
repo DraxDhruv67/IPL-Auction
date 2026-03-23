@@ -1,6 +1,8 @@
 from flask import Flask, render_template, request, jsonify, session
 from flask_socketio import SocketIO, emit, join_room
 import json, os, uuid, threading, time, random, hashlib
+import eventlet
+eventlet.monkey_patch()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'ipl_auction_secret_2024'
@@ -378,5 +380,8 @@ def on_get_state(data):
     sid = request.sid; room_id = sid_to_room.get(sid); room = rooms.get(room_id)
     if room: emit('full_state', pub(room))
 
+import os
+
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    port = int(os.environ.get("PORT", 5000))
+    socketio.run(app, host='0.0.0.0', port=port)
