@@ -112,20 +112,54 @@ function createRoom(){
   myName=($id('inp-name').value||'').trim();
   if(!myName){toast('Enter a team name!','error');return;}
   _audio();
-  socket.emit('create_room',{name:myName,username:currentUser?.username||''});
+  const checkboxes=document.querySelectorAll('.set-checks input[type=checkbox]');
+  const all=Array.from(checkboxes), selected=all.filter(c=>c.checked).map(c=>c.value);
+  const sets=selected.length===all.length?null:selected; // null = all sets
+  socket.emit('create_room',{name:myName,username:currentUser?.username||'',selected_sets:sets});
 }
-function joinRoom(code){
+function toggleSetPicker(){
+  const p=$id('set-picker'),a=$id('set-picker-arrow');
+  p.classList.toggle('hidden');a.textContent=p.classList.contains('hidden')?'▼':'▲';
+}
+function joinRoom(code, asSpectator=false){
   myName=($id('inp-name').value||'').trim();
   code=(code||$id('inp-room').value||'').trim().toUpperCase();
   if(!myName){toast('Enter a team name!','error');return;}
   if(!code){toast('Enter a room code!','error');return;}
   _audio();
-  socket.emit('join_room_req',{name:myName,room_id:code,username:currentUser?.username||''});
+  socket.emit('join_room_req',{name:myName,room_id:code,username:currentUser?.username||'',spectator:asSpectator});
 }
 function startAuction(){socket.emit('start_auction',{});}
 function nextPlayer(){socket.emit('next_player',{});}
 function placeBid(amt){socket.emit('place_bid',{amount:amt});}
 function stopAuction(){if(!confirm('End the auction now and go to results?'))return;socket.emit('stop_auction',{});}
+function skipPlayer(){if(!isHost)return;socket.emit('skip_player',{});}
+/* ── SET JUMP ── */
+let _setJumpSets=[];
+function openSetJumpPanel(){
+  if(!roomState) return;
+  const opts=$id('set-jump-options'); if(!opts) return;
+  const sets=(roomState.remaining_sets||[]);
+  if(!sets.length){toast('No other sets available!','error');return;}
+  _setJumpSets=sets;
+  opts.innerHTML=sets.map(s=>`
+    <button class="set-jump-opt" onclick="proposeSetJump('${s.id}','${s.label.replace(/'/g,'&#39;')}')">
+      ${s.label}
+    </button>`).join('');
+  $id('set-jump-panel').classList.remove('hidden');
+}
+function closeSetJumpPanel(){ $id('set-jump-panel').classList.add('hidden'); }
+function proposeSetJump(setId, label){
+  socket.emit('propose_set_jump',{set_id:setId});
+  closeSetJumpPanel();
+  toast(`📋 Proposed: ${label}`,'info');
+}
+function confirmSetJump(){ socket.emit('confirm_set_jump',{}); $id('set-jump-host-modal').classList.add('hidden'); }
+function rejectSetJump()  { socket.emit('reject_set_jump',{});  $id('set-jump-host-modal').classList.add('hidden'); }
+
+function sendReaction(emoji){socket.emit('send_reaction',{emoji});}
+function startReauction(){$id('reauction-modal').classList.add('hidden');socket.emit('start_reauction',{});}
+function skipReauction(){$id('reauction-modal').classList.add('hidden');socket.emit('skip_reauction',{});}
 
 /* ══════════════════════════════════════
    RENDER
@@ -136,6 +170,15 @@ function renderWaitTeams(teams){
   const cnt=$id('team-count');if(cnt)cnt.textContent=teams.length;
 }
 function renderTeamsPanel(teams){
+  // Update spectator count
+  if(roomState){
+    const sc=$id('spectator-count');
+    if(sc){
+      const n=roomState.spectator_count||0;
+      sc.classList.toggle('hidden',n===0);
+      sc.textContent=`👁 ${n} watching`;
+    }
+  }
   const html=teams.map(t=>{const bidding=roomState&&roomState.current_bidder_sid===t.sid,me=t.sid===mySid;return`<div class="team-row${bidding?' bidding':''}${me?' my-team':''}"><div class="t-name">${me?'★ ':''}${t.name}</div><div class="t-budget">${fmt(t.budget)}</div><div class="t-count">🏏 ${t.players.length}</div></div>`;}).join('');
   [$id('teams-list'),$id('m-teams-list')].forEach(el=>{if(el)el.innerHTML=html;});
 }
@@ -185,12 +228,16 @@ function showBanner(html,cls){
    SOCKET EVENTS
    ══════════════════════════════════════ */
 socket.on('connected',d=>{mySid=d.sid;});
+let isSpectator=false;
 socket.on('room_joined',d=>{
-  roomState=d.room;myRoomId=d.room_id;mySid=d.your_sid;isHost=d.room.host_sid===mySid;
+  roomState=d.room;myRoomId=d.room_id;mySid=d.your_sid;
+  isHost=d.room.host_sid===mySid;
+  isSpectator=(d.role==='spectator');
   $id('disp-room-id').textContent=myRoomId;$id('top-room-id').textContent=myRoomId;
   renderWaitTeams(d.room.teams);
   $id('host-controls').classList.toggle('hidden',!isHost);
   $id('guest-wait').classList.toggle('hidden',isHost);
+  const sb=$id('spectator-badge'); if(sb) sb.classList.toggle('hidden',!isSpectator);
   showScreen('screen-waiting');
 });
 socket.on('room_update',d=>{
@@ -206,7 +253,10 @@ socket.on('new_player',d=>{
   renderTeamsPanel(d.room.teams);renderPlayerCard(d.player);
   updateBid(d.player.base_price,null,null,null);
   updateProgress(d.room.sold_count,d.room.total_players);updateMyBudget();updateTimer(TIMER_MAX);
-  $id('bid-section').classList.remove('hidden');
+  $id('bid-section').classList.toggle('hidden', isSpectator);
+  // Show jump button: host sees it in host-next, guests get their own row
+  const gjr=$id('guest-jump-row');
+  if(gjr) gjr.classList.toggle('hidden', isHost||isSpectator);
   const stage=$id('player-stage');if(stage)stage.scrollTop=0;
   feed(`🆕 ${d.player.name} (${d.player.role})`,'new');sndNew();updateDrawer(d.room);
 });
@@ -229,6 +279,50 @@ socket.on('player_unsold',d=>{
   feed(`❌ ${d.player.name} — unsold`,'info');sndUnsold();updateDrawer(d.room);
   if(isHost)$id('host-next').classList.remove('hidden');
 });
+socket.on('set_jump_proposed',d=>{
+  roomState=d.room;
+  if(isHost){
+    const vote=d.vote;
+    $id('set-jump-host-msg').textContent=`${vote.proposer} wants to jump to: ${vote.label}. Approve?`;
+    $id('set-jump-host-modal').classList.remove('hidden');
+  } else {
+    toast(`📋 ${d.vote.proposer} proposed: ${d.vote.label}`,'info');
+  }
+});
+socket.on('set_jump_confirmed',d=>{
+  roomState=d.room;
+  toast(`📋 Jumping to ${d.set_label} (${d.count} players added)!`,'success');
+  feed(`📋 Set changed → ${d.set_label}`,'new');
+});
+socket.on('set_jump_rejected',d=>{
+  roomState=d.room;
+  toast('Set jump rejected by host','error');
+});
+
+socket.on('reaction',d=>{
+  const feed=$id('reaction-feed'); if(!feed) return;
+  const el=document.createElement('div');
+  el.className='reaction-item';
+  el.innerHTML=`<span>${d.emoji}</span><span style="color:var(--dim);font-size:10px">${d.name}</span>`;
+  feed.appendChild(el);
+  setTimeout(()=>el.remove(),4000);
+});
+
+socket.on('reauction_available',d=>{
+  roomState=d.room;
+  const modal=$id('reauction-modal'); if(!modal) return;
+  $id('reauction-msg').textContent=`${d.count} player(s) went unsold: ${d.players.slice(0,5).join(', ')}${d.count>5?'…':''}. Start a re-auction round?`;
+  if(isHost) modal.classList.remove('hidden');
+  else toast(`🔄 ${d.count} unsold players — host deciding on re-auction…`,'info');
+});
+
+socket.on('reauction_started',d=>{
+  roomState=d.room;
+  toast('🔄 RE-AUCTION ROUND STARTING!','success');
+  const stage=$id('player-stage');
+  if(stage) stage.innerHTML=`<div class="stage-idle"><div class="reauction-banner">🔄 RE-AUCTION ROUND</div><p style="color:var(--dim);margin-top:10px">Unsold players going under the hammer again…</p></div>`;
+});
+
 socket.on('auction_finished',d=>{
   showScreen('screen-finished');
   setTimeout(()=>{renderSquads(d.room.teams);renderFormation(d.room.teams);renderLeaderboard(d.room.teams);},120);
@@ -353,3 +447,104 @@ function renderLeaderboard(teams){
 /* ── Init ── */
 // If already logged in from previous session, skip auth
 if(currentUser){showScreen('screen-lobby');updateUserBadge();}
+
+/* ══════════════════════════════════════
+   SHAREABLE RESULT CARD (Canvas)
+   ══════════════════════════════════════ */
+function showMyResultCard(){
+  if(!roomState) return;
+  const me=roomState.teams.find(t=>t.sid===mySid);
+  if(!me||!me.players.length){toast('You have no players to show!','error');return;}
+  drawResultCard(me);
+  $id('result-card-modal').classList.remove('hidden');
+}
+function closeResultCard(){ $id('result-card-modal').classList.add('hidden'); }
+function downloadCard(){
+  const canvas=$id('result-canvas');
+  const a=document.createElement('a');
+  a.download=`${myName || 'squad'}_ipl_auction.png`;
+  a.href=canvas.toDataURL('image/png');
+  a.click();
+}
+
+function drawResultCard(team){
+  const canvas=$id('result-canvas');
+  const ctx=canvas.getContext('2d');
+  const W=540, H=720;
+  canvas.width=W; canvas.height=H;
+
+  // Background gradient
+  const bg=ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#06080F'); bg.addColorStop(1,'#0D1117');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+
+  // Gold border
+  ctx.strokeStyle='rgba(255,215,0,0.4)'; ctx.lineWidth=2;
+  ctx.strokeRect(10,10,W-20,H-20);
+
+  // Trophy + title
+  ctx.font='48px serif'; ctx.textAlign='center';
+  ctx.fillText('🏆',W/2,72);
+  ctx.fillStyle='#FFD700';
+  ctx.font='bold 32px "Bebas Neue", sans-serif';
+  ctx.letterSpacing='4px';
+  ctx.fillText('IPL MEGA AUCTION 2025',W/2,112);
+
+  // Team name
+  ctx.fillStyle=team.color||'#e9c46a';
+  ctx.font='bold 40px "Bebas Neue", sans-serif';
+  ctx.fillText(team.name.toUpperCase(),W/2,158);
+
+  // Stats bar
+  ctx.fillStyle='rgba(255,255,255,0.06)';
+  ctx.beginPath(); ctx.roundRect(30,170,W-60,52,8); ctx.fill();
+  const spent=10000-team.budget;
+  const stats=[
+    {label:'PLAYERS',val:team.players.length},
+    {label:'SPENT',val:fmt(spent)},
+    {label:'BUDGET LEFT',val:fmt(team.budget)},
+  ];
+  stats.forEach((s,i)=>{
+    const x=30+(W-60)/6*(i*2+1);
+    ctx.fillStyle='#FFD700'; ctx.font='bold 18px Orbitron,sans-serif'; ctx.textAlign='center';
+    ctx.fillText(s.val,x,197);
+    ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='10px Orbitron,sans-serif';
+    ctx.fillText(s.label,x,213);
+  });
+
+  // Divider
+  ctx.strokeStyle='rgba(255,215,0,0.2)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(30,234); ctx.lineTo(W-30,234); ctx.stroke();
+
+  // Role groups
+  const groups={Batsman:[],Bowler:[],'All-Rounder':[],'Wicket-Keeper':[]};
+  team.players.forEach(p=>{(groups[p.role]=groups[p.role]||[]).push(p);});
+  const roleColors={Batsman:'#E63946',Bowler:'#4D9FFF','All-Rounder':'#FFD700','Wicket-Keeper':'#06D6A0'};
+  const roleEmojis={Batsman:'🏏',Bowler:'🎯','All-Rounder':'⚡','Wicket-Keeper':'🧤'};
+  let y=250;
+  ['Batsman','Wicket-Keeper','All-Rounder','Bowler'].forEach(role=>{
+    const ps=groups[role]||[]; if(!ps.length) return;
+    // Role header
+    ctx.fillStyle=roleColors[role];
+    ctx.font='bold 13px Orbitron,sans-serif'; ctx.textAlign='left';
+    ctx.fillText(`${roleEmojis[role]} ${role.toUpperCase()}S (${ps.length})`,30,y);
+    y+=6;
+    // Player rows
+    ps.forEach(p=>{
+      if(y>H-60) return;
+      ctx.fillStyle='rgba(255,255,255,0.04)';
+      ctx.beginPath(); ctx.roundRect(30,y,W-60,30,5); ctx.fill();
+      ctx.fillStyle='#E8EBF0'; ctx.font='bold 14px Rajdhani,sans-serif'; ctx.textAlign='left';
+      ctx.fillText(p.name,44,y+20);
+      ctx.fillStyle='#FFD700'; ctx.font='bold 12px Orbitron,sans-serif'; ctx.textAlign='right';
+      ctx.fillText(fmt(p.sold_price),W-44,y+20);
+      y+=36;
+    });
+    y+=6;
+  });
+
+  // Footer
+  ctx.fillStyle='rgba(255,255,255,0.2)';
+  ctx.font='11px Orbitron,sans-serif'; ctx.textAlign='center';
+  ctx.fillText('ipl-auction25-3d.up.railway.app',W/2,H-22);
+}

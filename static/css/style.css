@@ -342,3 +342,60 @@ input::placeholder{color:var(--dim)}
   .player-name{font-size:22px}
   .finished-title{font-size:30px}
 }
+
+/* ══════════════════════════════════════
+   NEW FEATURE STYLES
+   ══════════════════════════════════════ */
+
+/* Spectate button */
+.btn-spectate { background:rgba(107,122,153,.2); border:1px solid rgba(107,122,153,.4); color:var(--dim); font-size:16px; padding:10px 14px; }
+.btn-spectate:hover { border-color:var(--gold); color:var(--gold); }
+.btn-skip { background:rgba(255,165,0,.15); border:1px solid rgba(255,165,0,.4); color:#FFA500; font-size:13px; padding:9px 16px; }
+.btn-skip:hover { background:rgba(255,165,0,.3); }
+.spectator-badge { position:fixed; top:12px; left:50%; transform:translateX(-50%); z-index:500; background:rgba(107,122,153,.9); border:1px solid var(--dim); border-radius:30px; padding:5px 16px; font-family:var(--fm); font-size:10px; letter-spacing:3px; color:#fff; }
+
+/* Custom set picker */
+.set-picker-toggle { display:block; cursor:pointer; font-size:12px; color:var(--dim); margin-top:8px; user-select:none; font-family:var(--fm); letter-spacing:1px; }
+.set-picker-toggle:hover { color:var(--gold); }
+.set-picker { background:rgba(255,255,255,.04); border:1px solid var(--bord); border-radius:8px; padding:12px; margin-top:6px; display:flex; flex-direction:column; gap:8px; }
+.set-picker-note { font-size:11px; color:var(--dim); }
+.set-checks { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.set-check { display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; padding:4px; border-radius:6px; transition:background .2s; }
+.set-check:hover { background:rgba(255,215,0,.08); }
+.set-check input { accent-color:var(--gold); width:16px; height:16px; cursor:pointer; }
+
+/* Reaction bar */
+.reaction-bar { flex-shrink:0; display:flex; align-items:center; gap:8px; padding:5px 12px; background:var(--bg2); border-top:1px solid var(--bord); }
+.reaction-feed { flex:1; min-width:0; overflow:hidden; white-space:nowrap; display:flex; gap:6px; align-items:center; }
+.reaction-item { display:inline-flex; align-items:center; gap:3px; font-size:12px; animation:reactPop .4s cubic-bezier(.34,1.56,.64,1); background:rgba(255,255,255,.06); border-radius:20px; padding:2px 8px; flex-shrink:0; }
+@keyframes reactPop { from{transform:scale(0) translateY(10px);opacity:0} to{transform:scale(1) translateY(0);opacity:1} }
+.reaction-btns { display:flex; gap:4px; flex-shrink:0; }
+.react-btn { background:none; border:1px solid var(--bord); border-radius:8px; padding:5px 8px; font-size:16px; cursor:pointer; transition:transform .15s,background .15s; line-height:1; -webkit-tap-highlight-color:transparent; }
+.react-btn:hover { background:rgba(255,255,255,.08); transform:scale(1.15); }
+.react-btn:active { transform:scale(.9); }
+
+/* Modals */
+.modal-overlay { position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,.75); display:flex; align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(4px); }
+.modal-box { background:var(--surf); border:1px solid var(--bord); border-radius:18px; padding:32px 28px; text-align:center; max-width:400px; width:100%; animation:popIn .35s cubic-bezier(.34,1.56,.64,1); }
+.modal-icon { font-size:48px; margin-bottom:12px; }
+.modal-title { font-family:var(--fd); font-size:24px; letter-spacing:3px; color:var(--gold); margin-bottom:10px; }
+.modal-msg { color:var(--dim); font-size:14px; line-height:1.6; margin-bottom:20px; }
+.modal-actions { display:flex; flex-direction:column; gap:10px; }
+.result-card-box { max-width:580px; }
+#result-canvas { width:100%; border-radius:12px; display:block; }
+
+/* In-reauction banner */
+.reauction-banner { background:linear-gradient(135deg,rgba(230,57,70,.15),rgba(255,215,0,.1)); border:1px solid rgba(255,215,0,.3); border-radius:8px; padding:6px 14px; text-align:center; font-family:var(--fd); font-size:14px; letter-spacing:2px; color:var(--gold); flex-shrink:0; }
+
+/* Spectator count badge on teams panel */
+.spectator-count { font-size:10px; color:var(--dim); padding:4px 10px; text-align:center; border-top:1px solid var(--bord); flex-shrink:0; }
+
+/* ── SET PICKER & JUMP ── */
+.set-group-label { font-family:var(--fm); font-size:9px; letter-spacing:3px; color:var(--gold); margin:8px 0 4px; text-transform:uppercase; }
+.set-checks { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin-bottom:4px; }
+.set-jump-options { display:flex; flex-direction:column; gap:6px; max-height:320px; overflow-y:auto; }
+.set-jump-opt { background:var(--bg3); border:1px solid var(--bord); border-radius:8px; padding:10px 14px; color:var(--text); font-family:var(--fb); font-size:13px; font-weight:600; cursor:pointer; text-align:left; transition:all .15s; }
+.set-jump-opt:hover { border-color:var(--gold); background:rgba(255,215,0,.08); color:var(--gold); }
+.btn-jump { background:rgba(107,198,255,.12); border:1px solid rgba(107,198,255,.3); color:#6BC6FF; font-size:13px; padding:9px 14px; }
+.btn-jump:hover { background:rgba(107,198,255,.22); border-color:#6BC6FF; }
+.guest-jump-row { flex-shrink:0; display:flex; justify-content:center; padding:6px 12px; background:var(--bg2); border-top:1px solid var(--bord); }

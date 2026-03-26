@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#06080F">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>IPL Mega Auction 2025</title>
+<title>IPL Mega Auction</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
@@ -71,7 +71,7 @@
     </div>
     <div class="lobby-card">
       <div class="input-group"><label>YOUR TEAM NAME</label>
-        <input id="inp-name" type="text" placeholder="e.g. Mumbai Mavericks" maxlength="20" autocomplete="off">
+        <input id="inp-name" type="text" placeholder="e.g. Chennai Champions" maxlength="20" autocomplete="off">
       </div>
       <div class="lobby-actions">
         <button class="btn btn-primary" onclick="createRoom()"><span>🏟️</span> CREATE ROOM</button>
@@ -79,6 +79,35 @@
         <div class="join-row">
           <input id="inp-room" type="text" placeholder="ROOM CODE" maxlength="6" style="text-transform:uppercase;letter-spacing:4px">
           <button class="btn btn-secondary" onclick="joinRoom()">JOIN</button>
+          <button class="btn btn-spectate" onclick="joinRoom(null,true)" title="Watch only">👁</button>
+        </div>
+        <label class="set-picker-toggle" onclick="toggleSetPicker()">⚙️ Customize sets <span id="set-picker-arrow">▼</span></label>
+        <div id="set-picker" class="set-picker hidden">
+          <div class="set-picker-note">Host only — uncheck any sets to exclude them</div>
+          <div class="set-group-label">🏏 BATSMEN</div>
+          <div class="set-checks">
+            <label class="set-check"><input type="checkbox" value="bat_ind_cap" checked> 🇮🇳 Indian Capped</label>
+            <label class="set-check"><input type="checkbox" value="bat_ind_uncap" checked> 🇮🇳 Indian Uncapped</label>
+            <label class="set-check"><input type="checkbox" value="bat_foreign" checked> 🌍 Foreign</label>
+          </div>
+          <div class="set-group-label">🧤 WICKET-KEEPERS</div>
+          <div class="set-checks">
+            <label class="set-check"><input type="checkbox" value="wk_ind_cap" checked> 🇮🇳 Indian Capped</label>
+            <label class="set-check"><input type="checkbox" value="wk_ind_uncap" checked> 🇮🇳 Indian Uncapped</label>
+            <label class="set-check"><input type="checkbox" value="wk_foreign" checked> 🌍 Foreign</label>
+          </div>
+          <div class="set-group-label">⚡ ALL-ROUNDERS</div>
+          <div class="set-checks">
+            <label class="set-check"><input type="checkbox" value="ar_ind_cap" checked> 🇮🇳 Indian Capped</label>
+            <label class="set-check"><input type="checkbox" value="ar_ind_uncap" checked> 🇮🇳 Indian Uncapped</label>
+            <label class="set-check"><input type="checkbox" value="ar_foreign" checked> 🌍 Foreign</label>
+          </div>
+          <div class="set-group-label">🎯 BOWLERS</div>
+          <div class="set-checks">
+            <label class="set-check"><input type="checkbox" value="bowl_ind_cap" checked> 🇮🇳 Indian Capped</label>
+            <label class="set-check"><input type="checkbox" value="bowl_ind_uncap" checked> 🇮🇳 Indian Uncapped</label>
+            <label class="set-check"><input type="checkbox" value="bowl_foreign" checked> 🌍 Foreign</label>
+          </div>
         </div>
       </div>
       <div id="lobby-rooms" class="active-rooms"></div>
@@ -124,6 +153,7 @@
     <aside class="teams-panel">
       <div class="panel-header">FRANCHISES</div>
       <div id="teams-list" class="teams-list"></div>
+      <div id="spectator-count" class="spectator-count hidden">👁 0 watching</div>
     </aside>
     <main class="auction-main">
       <div class="auction-topbar">
@@ -153,9 +183,27 @@
           <button class="bid-btn bid-btn-gold" onclick="placeBid(500)">+₹5Cr</button>
         </div>
       </div>
+      <!-- Reaction bar -->
+      <div class="reaction-bar">
+        <div id="reaction-feed" class="reaction-feed"></div>
+        <div class="reaction-btns">
+          <button class="react-btn" onclick="sendReaction('🔥')">🔥</button>
+          <button class="react-btn" onclick="sendReaction('😱')">😱</button>
+          <button class="react-btn" onclick="sendReaction('💰')">💰</button>
+          <button class="react-btn" onclick="sendReaction('👏')">👏</button>
+          <button class="react-btn" onclick="sendReaction('😂')">😂</button>
+          <button class="react-btn" onclick="sendReaction('💎')">💎</button>
+        </div>
+      </div>
       <div id="host-next" class="host-next hidden">
-        <button class="btn btn-next" onclick="nextPlayer()">⏭ NEXT PLAYER</button>
-        <button class="btn btn-stop" onclick="stopAuction()">🏁 END AUCTION</button>
+        <button class="btn btn-next" onclick="nextPlayer()">⏭ NEXT</button>
+        <button class="btn btn-skip" onclick="skipPlayer()">⏩ SKIP</button>
+        <button class="btn btn-jump" onclick="openSetJumpPanel()">📋 SETS</button>
+        <button class="btn btn-stop" onclick="stopAuction()">🏁 END</button>
+      </div>
+      <!-- Non-host set jump button -->
+      <div id="guest-jump-row" class="guest-jump-row hidden">
+        <button class="btn btn-jump" onclick="openSetJumpPanel()">📋 PROPOSE SET JUMP</button>
       </div>
     </main>
     <aside class="feed-panel">
@@ -228,6 +276,58 @@
   <div id="fin-leaderboard" class="fin-section">       <div id="leaderboard-wrap"  class="leaderboard"></div></div>
   <div style="text-align:center;padding:24px">
     <button class="btn btn-primary" onclick="location.reload()">🔄 NEW AUCTION</button>
+    <button class="btn btn-secondary" style="margin-top:8px" onclick="showMyResultCard()">📸 MY SQUAD CARD</button>
+  </div>
+</div>
+
+<!-- Set Jump modal — host confirmation -->
+<div id="set-jump-host-modal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-icon">📋</div>
+    <h3 class="modal-title">SET JUMP REQUEST</h3>
+    <p id="set-jump-host-msg" class="modal-msg"></p>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="confirmSetJump()">✅ JUMP TO SET</button>
+      <button class="btn btn-stop" onclick="rejectSetJump()">✕ REJECT</button>
+    </div>
+  </div>
+</div>
+
+<!-- Set Jump panel — any player can propose -->
+<div id="set-jump-panel" class="modal-overlay hidden" onclick="closeSetJumpPanel()">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-icon">📋</div>
+    <h3 class="modal-title">JUMP TO SET</h3>
+    <p class="modal-msg">Propose switching to a different set. Host must approve.</p>
+    <div id="set-jump-options" class="set-jump-options"></div>
+    <button class="btn btn-secondary" style="margin-top:10px;width:100%" onclick="closeSetJumpPanel()">CANCEL</button>
+  </div>
+</div>
+
+<!-- Re-auction modal -->
+<div id="reauction-modal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-icon">🔄</div>
+    <h3 class="modal-title">UNSOLD PLAYERS AVAILABLE</h3>
+    <p id="reauction-msg" class="modal-msg"></p>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="startReauction()">🔄 START RE-AUCTION</button>
+      <button class="btn btn-stop" onclick="skipReauction()">SKIP → RESULTS</button>
+    </div>
+  </div>
+</div>
+
+<!-- Spectator badge -->
+<div id="spectator-badge" class="spectator-badge hidden">👁 WATCHING</div>
+
+<!-- Result card modal -->
+<div id="result-card-modal" class="modal-overlay hidden" onclick="closeResultCard()">
+  <div class="modal-box result-card-box" onclick="event.stopPropagation()">
+    <canvas id="result-canvas" width="540" height="720"></canvas>
+    <div class="modal-actions" style="margin-top:12px">
+      <button class="btn btn-primary" onclick="downloadCard()">⬇️ DOWNLOAD</button>
+      <button class="btn btn-secondary" onclick="closeResultCard()">CLOSE</button>
+    </div>
   </div>
 </div>
 
