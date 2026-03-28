@@ -1,17 +1,17 @@
-# import eventlet
-# eventlet.monkey_patch()
+import eventlet
+eventlet.monkey_patch()
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit, join_room
-import json, os, uuid, threading, time, random, hashlib
+import json, os, uuid, time, random, hashlib
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'ipl_auction_secret_2024'
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-# ── Constants ──────────────────────────────────────────────────────────────────
+# ── State ──────────────────────────────────────────────────────────────────────
 rooms       = {}
 sid_to_room = {}
-sid_role    = {}   # sid -> 'bidder' | 'spectator'
+sid_role    = {}
 color_pool  = ['#e63946','#2a9d8f','#e9c46a','#f4a261','#264653',
                '#8338ec','#3a86ff','#fb5607','#06d6a0','#118ab2']
 
@@ -19,16 +19,16 @@ INITIAL_BUDGET      = 10000
 TIMER_SECONDS       = 20
 MIN_TIMER_AFTER_BID = 10
 
-# Bid increment rules: if current_bid >= threshold, min increment = step
-BID_INCREMENT_RULES = [
-    (0,    10),   # < 100L  → min +10L
-    (100,  25),   # 100L–499L → min +25L
-    (500,  50),   # 500L–999L → min +50L
-    (1000, 100),  # 1Cr–4.99Cr → min +1Cr
-    (500,  200),  # 5Cr+ → min +2Cr
+# Bot personality configs
+BOT_NAMES = [
+    ('RCB Bot',  '#e63946', 'aggressive'),
+    ('MI Bot',   '#0047CC', 'smart'),
+    ('CSK Bot',  '#e9c46a', 'conservative'),
+    ('KKR Bot',  '#8338ec', 'random'),
+    ('SRH Bot',  '#fb5607', 'aggressive'),
+    ('GT Bot',   '#06d6a0', 'smart'),
 ]
 
-# Granular sets: key = set_id, value = display label
 ALL_SETS = {
     'bat_ind_cap':   'SET A1 — INDIAN CAPPED BATSMEN',
     'bat_ind_uncap': 'SET A2 — INDIAN UNCAPPED BATSMEN',
@@ -43,23 +43,6 @@ ALL_SETS = {
     'bowl_ind_uncap':'SET D2 — INDIAN UNCAPPED BOWLERS',
     'bowl_foreign':  'SET D3 — FOREIGN BOWLERS',
 }
-
-def classify_player(p):
-    """Return the set_id for a player based on role, nationality, capped status."""
-    role = p.get('role','')
-    nat  = p.get('nationality','India')
-    cap  = p.get('capped', True)
-    prefix = {
-        'Batsman':'bat', 'Wicket-Keeper':'wk',
-        'All-Rounder':'ar', 'Bowler':'bowl'
-    }.get(role,'bat')
-    if nat == 'India':
-        suffix = 'ind_cap' if cap else 'ind_uncap'
-    else:
-        suffix = 'foreign'
-    return f'{prefix}_{suffix}'
-
-# Default order sets are auctioned in (real IPL style)
 DEFAULT_SET_ORDER = [
     'bat_ind_cap','bat_foreign','bat_ind_uncap',
     'wk_ind_cap','wk_foreign','wk_ind_uncap',
@@ -69,7 +52,8 @@ DEFAULT_SET_ORDER = [
 
 DATA_DIR   = os.path.join(os.path.dirname(__file__), 'data')
 _tmp_users = os.path.join('/tmp', 'ipl_users.json')
-USERS_FILE = _tmp_users if os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('PORT') else os.path.join(DATA_DIR, 'users.json')
+USERS_FILE = _tmp_users if os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('PORT') \
+             else os.path.join(DATA_DIR, 'users.json')
 
 # ── User helpers ───────────────────────────────────────────────────────────────
 def load_users():
@@ -102,6 +86,7 @@ def load_players():
                     'name':        str(p.get('name','')).strip(),
                     'role':        str(p.get('role','')).strip(),
                     'nationality': str(p.get('nationality','India')).strip(),
+                    'capped':      bool(p.get('capped', True)),
                     'team':        str(p.get('ipl_franchise') or p.get('franchise','—')).strip(),
                     'base_price':  int(p.get('base_price') or p.get('base_price_') or 75),
                     'rating':      int(p.get('rating') or 70),
@@ -112,11 +97,16 @@ def load_players():
     with open(os.path.join(DATA_DIR, 'players.json')) as f:
         return json.load(f)
 
+def classify_player(p):
+    role = p.get('role','')
+    nat  = p.get('nationality','India')
+    cap  = p.get('capped', True)
+    prefix = {'Batsman':'bat','Wicket-Keeper':'wk','All-Rounder':'ar','Bowler':'bowl'}.get(role,'bat')
+    suffix = ('ind_cap' if cap else 'ind_uncap') if nat == 'India' else 'foreign'
+    return f'{prefix}_{suffix}'
+
 def arrange_in_sets(players, selected_sets=None):
-    """Group players into granular sets, respecting selected_sets filter."""
-    order = selected_sets if selected_sets else DEFAULT_SET_ORDER
-    # Only keep sets that actually exist in the order list
-    order = [s for s in DEFAULT_SET_ORDER if s in order]
+    order = [s for s in DEFAULT_SET_ORDER if not selected_sets or s in selected_sets]
     buckets = {s: [] for s in order}
     for p in players:
         sid = classify_player(p)
@@ -125,79 +115,65 @@ def arrange_in_sets(players, selected_sets=None):
     result = []
     for set_id in order:
         group = buckets.get(set_id, [])
-        if not group:
-            continue
+        if not group: continue
         random.shuffle(group)
         label = ALL_SETS.get(set_id, set_id)
         for i, p in enumerate(group):
+            p = dict(p)  # copy so original pool is not mutated
             p['_set_id']    = set_id
             p['_set_label'] = label
             p['_set_start'] = (i == 0)
+            group[i] = p
         result.extend(group)
     return result
 
-def get_available_sets(players):
-    """Return list of sets that have at least one player."""
-    found = set()
-    for p in players:
-        found.add(classify_player(p))
-    return [s for s in DEFAULT_SET_ORDER if s in found]
-
 def get_min_increment(current_bid):
-    """Return minimum allowed bid increment given current bid."""
-    thresholds = [
-        (5000, 500),
-        (1000, 100),
-        (500,   50),
-        (100,   25),
-        (0,     10),
-    ]
-    for threshold, increment in thresholds:
-        if current_bid >= threshold:
-            return increment
+    for threshold, inc in [(5000,500),(1000,100),(500,50),(100,25),(0,10)]:
+        if current_bid >= threshold: return inc
     return 10
 
 # ── Room helpers ───────────────────────────────────────────────────────────────
 def new_room(room_id, host_sid, host_name, selected_sets=None):
     raw = load_players()
     players = arrange_in_sets(raw, selected_sets)
-    avail   = get_available_sets(raw)
+    avail = list({classify_player(p) for p in raw} & set(DEFAULT_SET_ORDER))
+    avail.sort(key=DEFAULT_SET_ORDER.index)
     return {
         'id': room_id, 'host_sid': host_sid, 'host_name': host_name,
         'status': 'waiting', 'teams': {}, 'spectators': {},
         'players': players, 'player_index': -1,
-        'all_players_pool': raw,           # full pool for injecting new sets mid-auction
-        'available_sets': avail,           # all sets that exist in the data
-        'active_sets': selected_sets or avail,
+        'raw_players': raw,
+        'available_sets': avail,
         'current_player': None, 'current_bid': 0,
         'current_bidder_sid': None, 'current_bidder_name': None,
-        'timer': TIMER_SECONDS, 'timer_lock': threading.Lock(),
-        'timer_stop': threading.Event(),
+        'timer': TIMER_SECONDS,
+        # FIX: use a simple integer counter instead of threading.Lock under eventlet
+        'bid_version': 0,      # incremented on each bid/skip to detect stale timers
         'sold_players': [], 'unsold_players': [],
-        'reauction_pool': [],
-        'in_reauction': False,
-        'set_vote': None,      # pending set-jump vote
-        'reactions': [],
+        'reauction_pool': [], 'in_reauction': False,
+        'set_vote': None, 'reactions': [],
         'started_at': time.time(),
+        'bots': {},   # bot_id -> team dict
     }
 
-def new_team(sid, name, idx):
-    return {'sid': sid, 'name': name, 'budget': INITIAL_BUDGET,
-            'players': [], 'color': color_pool[idx % len(color_pool)]}
+def new_team(sid, name, idx, is_bot=False):
+    t = {'sid': sid, 'name': name, 'budget': INITIAL_BUDGET,
+         'players': [], 'color': color_pool[idx % len(color_pool)], 'is_bot': is_bot}
+    return t
 
 def pub(room):
     idx = room['player_index']
     upcoming = room['players'][idx+1:idx+8] if not room['in_reauction'] else []
-    # Compute which sets are still remaining (have players not yet auctioned)
-    auctioned_names = {p['name'] for p in room['sold_players']+room['unsold_players']}
+    # Efficient remaining-sets calc using player queue (not raw_players scan)
+    auctioned = {p['name'] for p in room['sold_players']+room['unsold_players']}
+    seen_sets  = set()
     remaining_sets = []
-    for set_id in room.get('available_sets',[]):
-        has_remaining = any(
-            classify_player(p)==set_id and p['name'] not in auctioned_names
-            for p in room.get('all_players_pool',[])
-        )
-        if has_remaining:
-            remaining_sets.append({'id': set_id, 'label': ALL_SETS.get(set_id, set_id)})
+    for p in room['players'][idx+1:]:
+        sid = p.get('_set_id') or classify_player(p)
+        if sid not in seen_sets:
+            seen_sets.add(sid)
+            if p['name'] not in auctioned:
+                remaining_sets.append({'id': sid, 'label': ALL_SETS.get(sid, sid)})
     return {
         'id': room['id'], 'host_sid': room['host_sid'], 'host_name': room['host_name'],
         'status': room['status'], 'teams': list(room['teams'].values()),
@@ -220,31 +196,35 @@ def pub(room):
         'set_vote': room.get('set_vote'),
     }
 
-# ── Timer ──────────────────────────────────────────────────────────────────────
-def _timer_worker(room_id, stop_event):
-    while not stop_event.is_set():
-        time.sleep(1)
-        if stop_event.is_set(): break
-        room = rooms.get(room_id)
-        if not room or room['status'] != 'bidding': break
-        with room['timer_lock']:
-            if room['status'] != 'bidding': break
-            room['timer'] -= 1
-            t = room['timer']
-        socketio.emit('timer_tick', {'timer': t}, to=room_id)
-        if t <= 0:
-            _close_bid(room_id); break
-
+# ── Timer — eventlet-safe, no threading.Lock ─────────────────────────────────
 def _start_timer(room):
-    room['timer_stop'].set()
-    stop = threading.Event()
-    room['timer_stop'] = stop
+    """Start a greenlet-based countdown. Uses bid_version to detect stale timers."""
     room['timer'] = TIMER_SECONDS
-    threading.Thread(target=_timer_worker, args=(room['id'], stop), daemon=True).start()
+    room_id  = room['id']
+    version  = room['bid_version']   # capture current version
 
-def _close_bid(room_id):
+    def _run():
+        for remaining in range(TIMER_SECONDS - 1, -1, -1):
+            eventlet.sleep(1)
+            r = rooms.get(room_id)
+            # Stale check: if bid_version changed or status changed, abort
+            if not r or r['bid_version'] != version or r['status'] != 'bidding':
+                return
+            r['timer'] = remaining
+            socketio.emit('timer_tick', {'timer': remaining}, to=room_id)
+            if remaining == 0:
+                _close_bid(room_id, version)
+
+    eventlet.spawn(_run)
+
+# ── Bid close ─────────────────────────────────────────────────────────────────
+def _close_bid(room_id, expected_version=None):
+    """Close the current bid. expected_version prevents double-close."""
     room = rooms.get(room_id)
     if not room or room['status'] != 'bidding': return
+    # Version guard — prevents stale timer from closing after a skip/new bid
+    if expected_version is not None and room['bid_version'] != expected_version:
+        return
     player = room['current_player']
     if room['current_bidder_sid']:
         winner = room['teams'].get(room['current_bidder_sid'])
@@ -265,7 +245,6 @@ def _close_bid(room_id):
         }, to=room_id)
     else:
         room['unsold_players'].append(player)
-        # add to re-auction pool automatically
         room['reauction_pool'].append(player)
         room['status'] = 'unsold'
         socketio.emit('player_unsold', {'player': player, 'room': pub(room)}, to=room_id)
@@ -273,25 +252,27 @@ def _close_bid(room_id):
 def _finish_auction(room_id):
     room = rooms.get(room_id)
     if not room: return
-    # If there are unsold players, offer re-auction instead of finishing
     if room['reauction_pool'] and not room['in_reauction']:
         room['status'] = 'reauction_pending'
-        room['timer_stop'].set()
         socketio.emit('reauction_available', {
             'count': len(room['reauction_pool']),
             'players': [p['name'] for p in room['reauction_pool']],
             'room': pub(room),
         }, to=room_id)
         return
+    _finish_auction_final(room_id)
+
+def _finish_auction_final(room_id):
+    room = rooms.get(room_id)
+    if not room: return
     room['status'] = 'finished'
-    room['timer_stop'].set()
     _save_game_records(room)
     socketio.emit('auction_finished', {'room': pub(room), 'sold': room['sold_players']}, to=room_id)
 
 def _save_game_records(room):
-    users = load_users()
-    changed = False
+    users = load_users(); changed = False
     for sid, team in room['teams'].items():
+        if team.get('is_bot'): continue
         username = team.get('username')
         if not username or username not in users: continue
         record = {
@@ -312,32 +293,79 @@ def _next_player(room_id):
     if not room: return
     if room['in_reauction']:
         if not room['reauction_pool']:
-            # Re-auction done, finish for real
             room['in_reauction'] = False
-            room['status'] = 'sold'
-            _finish_auction_final(room_id)
-            return
+            _finish_auction_final(room_id); return
         player = room['reauction_pool'].pop(0)
     else:
         room['player_index'] += 1
         if room['player_index'] >= len(room['players']):
             _finish_auction(room_id); return
         player = room['players'][room['player_index']]
-    room['current_player'] = player
-    room['current_bid'] = player['base_price']
-    room['current_bidder_sid'] = None
+    room['current_player']      = player
+    room['current_bid']         = player['base_price']
+    room['current_bidder_sid']  = None
     room['current_bidder_name'] = None
-    room['status'] = 'bidding'
+    room['status']              = 'bidding'
+    room['bid_version']        += 1   # invalidate any running timer
     _start_timer(room)
     socketio.emit('new_player', {'player': player, 'room': pub(room)}, to=room_id)
+    # Schedule bot bids after a short delay
+    eventlet.spawn_after(2, _bot_consider_bid, room_id, room['bid_version'])
 
-def _finish_auction_final(room_id):
+# ── Bot logic ──────────────────────────────────────────────────────────────────
+def _bot_consider_bid(room_id, version):
+    """Each bot independently decides whether to bid on the current player."""
     room = rooms.get(room_id)
-    if not room: return
-    room['status'] = 'finished'
-    room['timer_stop'].set()
-    _save_game_records(room)
-    socketio.emit('auction_finished', {'room': pub(room), 'sold': room['sold_players']}, to=room_id)
+    if not room or room['status'] != 'bidding' or room['bid_version'] != version:
+        return
+    for bot_sid, bot in list(room['bots'].items()):
+        team = room['teams'].get(bot_sid)
+        if not team: continue
+        eventlet.spawn_after(random.uniform(0.5, 4.0), _bot_bid_attempt,
+                             room_id, bot_sid, version)
+
+def _bot_bid_attempt(room_id, bot_sid, version):
+    room = rooms.get(room_id)
+    if not room or room['status'] != 'bidding' or room['bid_version'] != version:
+        return
+    team = room['teams'].get(bot_sid)
+    bot  = room['bots'].get(bot_sid)
+    if not team or not bot: return
+    if bot_sid == room['current_bidder_sid']: return  # already leading
+
+    player   = room['current_player']
+    budget   = team['budget']
+    cur_bid  = room['current_bid']
+    rating   = player.get('rating', 70)
+    style    = bot.get('style', 'smart')
+
+    # Decide max willingness to pay based on rating + style
+    base_mult = {'aggressive': 1.6, 'smart': 1.25, 'conservative': 1.0, 'random': random.uniform(0.9,1.8)}.get(style, 1.2)
+    max_pay  = min(budget, int(player['base_price'] * base_mult + (rating - 70) * 30))
+
+    if cur_bid >= max_pay: return   # too expensive
+    if budget < cur_bid + get_min_increment(cur_bid): return  # can't afford increment
+
+    # Place the bid
+    inc     = get_min_increment(cur_bid)
+    new_bid = cur_bid + inc
+    if new_bid > budget: return
+
+    room['current_bid']         = new_bid
+    room['current_bidder_sid']  = bot_sid
+    room['current_bidder_name'] = team['name']
+    room['timer']               = max(room['timer'], MIN_TIMER_AFTER_BID)
+    room['bid_version']        += 1
+    version = room['bid_version']
+
+    socketio.emit('bid_update', {
+        'bid': new_bid, 'bidder': team['name'],
+        'bidder_color': team['color'], 'bidder_sid': bot_sid,
+        'timer': room['timer'], 'room': pub(room),
+    }, to=room_id)
+
+    # Bot may bid again after a pause if outbid
+    eventlet.spawn_after(random.uniform(3.0, 7.0), _bot_consider_bid, room_id, version)
 
 # ── HTTP ───────────────────────────────────────────────────────────────────────
 @app.route('/')
@@ -408,8 +436,9 @@ def on_disconnect():
         name = leaving.get('name', '?')
         if room['current_bidder_sid'] == sid:
             room['current_bidder_sid'] = None; room['current_bidder_name'] = None
-        if not room['teams']:
-            room['timer_stop'].set(); rooms.pop(room_id, None); return
+        real_teams = [t for t in room['teams'].values() if not t.get('is_bot')]
+        if not real_teams:
+            rooms.pop(room_id, None); return
         socketio.emit('notification', {'msg': f'👋 {name} left'}, to=room_id)
     socketio.emit('room_update', pub(room), to=room_id)
 
@@ -418,12 +447,22 @@ def on_create_room(data):
     sid  = request.sid
     name = (data.get('name') or 'Host').strip()[:20]
     username = data.get('username','')
-    selected_sets = data.get('selected_sets', None)  # granular set selection
+    selected_sets = data.get('selected_sets', None)
+    bot_count = min(int(data.get('bots', 0)), 5)
     room_id = str(uuid.uuid4())[:6].upper()
     room = new_room(room_id, sid, name, selected_sets)
     team = new_team(sid, name, 0)
     if username: team['username'] = username
     room['teams'][sid] = team
+    # Add bots
+    for i in range(bot_count):
+        bot_cfg = BOT_NAMES[i % len(BOT_NAMES)]
+        bot_sid = f'bot_{room_id}_{i}'
+        bteam = new_team(bot_sid, bot_cfg[0], i+1, is_bot=True)
+        bteam['color'] = bot_cfg[1]
+        room['teams'][bot_sid] = bteam
+        room['bots'][bot_sid]  = {'style': bot_cfg[2]}
+        sid_role[bot_sid] = 'bidder'
     rooms[room_id] = room; sid_to_room[sid] = room_id; sid_role[sid] = 'bidder'
     join_room(room_id)
     emit('room_joined', {'room': pub(room), 'your_sid': sid, 'room_id': room_id, 'role': 'bidder'})
@@ -440,8 +479,7 @@ def on_join_room(data):
         emit('error', {'msg': f'Room "{room_id}" not found.'}); return
     if room['status'] == 'finished':
         emit('error', {'msg': 'This auction has ended.'}); return
-    sid_to_room[sid] = room_id
-    join_room(room_id)
+    sid_to_room[sid] = room_id; join_room(room_id)
     if as_spectator:
         room['spectators'][sid] = {'name': name, 'sid': sid}
         sid_role[sid] = 'spectator'
@@ -451,8 +489,7 @@ def on_join_room(data):
         idx  = len(room['teams'])
         team = new_team(sid, name, idx)
         if username: team['username'] = username
-        room['teams'][sid] = team
-        sid_role[sid] = 'bidder'
+        room['teams'][sid] = team; sid_role[sid] = 'bidder'
         emit('room_joined', {'room': pub(room), 'your_sid': sid, 'room_id': room_id, 'role': 'bidder'})
         socketio.emit('notification', {'msg': f'🏏 {name} joined!'}, to=room_id)
     socketio.emit('room_update', pub(room), to=room_id)
@@ -462,7 +499,7 @@ def on_start(data):
     sid = request.sid; room_id = sid_to_room.get(sid); room = rooms.get(room_id)
     if not room: emit('error',{'msg':'Not in a room.'}); return
     if room['host_sid'] != sid: emit('error',{'msg':'Only the host can start.'}); return
-    if room['status'] != 'waiting': emit('error',{'msg':'Auction already started.'}); return
+    if room['status'] != 'waiting': emit('error',{'msg':'Already started.'}); return
     _next_player(room_id)
 
 @socketio.on('next_player')
@@ -475,32 +512,27 @@ def on_next(data):
 
 @socketio.on('skip_player')
 def on_skip(data):
-    """Host sends current player to unsold immediately."""
     sid = request.sid; room_id = sid_to_room.get(sid); room = rooms.get(room_id)
     if not room or room['host_sid'] != sid: return
     if room['status'] != 'bidding': return
-    room['timer_stop'].set()
-    room['status'] = 'bidding'   # allow _close_bid to run
     player = room['current_player']
+    room['bid_version'] += 1   # invalidate running timer
+    room['status'] = 'unsold'  # set BEFORE appending, so timer sees non-bidding status
     room['unsold_players'].append(player)
     room['reauction_pool'].append(player)
-    room['status'] = 'unsold'
     socketio.emit('player_unsold', {'player': player, 'room': pub(room)}, to=room_id)
 
 @socketio.on('start_reauction')
 def on_start_reauction(data):
-    """Host confirms starting the re-auction round."""
     sid = request.sid; room_id = sid_to_room.get(sid); room = rooms.get(room_id)
     if not room or room['host_sid'] != sid: return
     if room['status'] != 'reauction_pending': return
-    room['in_reauction'] = True
-    room['status'] = 'waiting'
+    room['in_reauction'] = True; room['status'] = 'waiting'
     socketio.emit('reauction_started', {'room': pub(room)}, to=room_id)
     _next_player(room_id)
 
 @socketio.on('skip_reauction')
 def on_skip_reauction(data):
-    """Host skips re-auction, go straight to results."""
     sid = request.sid; room_id = sid_to_room.get(sid); room = rooms.get(room_id)
     if not room or room['host_sid'] != sid: return
     room['reauction_pool'] = []
@@ -511,8 +543,8 @@ def on_stop(data):
     sid = request.sid; room_id = sid_to_room.get(sid); room = rooms.get(room_id)
     if not room or room['host_sid'] != sid: return
     if room['status'] == 'finished': return
-    room['timer_stop'].set()
-    room['reauction_pool'] = []   # skip re-auction when manually stopping
+    room['bid_version'] += 1
+    room['reauction_pool'] = []
     _finish_auction_final(room_id)
 
 @socketio.on('place_bid')
@@ -526,34 +558,34 @@ def on_bid(data):
     try: amount = int(data.get('amount', 0))
     except: return
     if amount <= 0: return
-    # Bid increment lock
     min_inc = get_min_increment(room['current_bid'])
     if amount < min_inc:
-        emit('error',{'msg':f'Minimum bid increment is ₹{min_inc}L at this price!'}); return
+        emit('error',{'msg':f'Min increment is ₹{min_inc}L here!'}); return
     new_bid = room['current_bid'] + amount
     if new_bid > team['budget']:
-        emit('error',{'msg':f'Not enough budget!'}); return
+        emit('error',{'msg':'Not enough budget!'}); return
     if sid == room['current_bidder_sid']:
         emit('error',{'msg':"You're already highest bidder!"}); return
-    with room['timer_lock']:
-        room['current_bid'] = new_bid
-        room['current_bidder_sid'] = sid
-        room['current_bidder_name'] = team['name']
-        room['timer'] = max(room['timer'], MIN_TIMER_AFTER_BID)
+    room['current_bid']         = new_bid
+    room['current_bidder_sid']  = sid
+    room['current_bidder_name'] = team['name']
+    room['timer']               = max(room['timer'], MIN_TIMER_AFTER_BID)
+    room['bid_version']        += 1
+    version = room['bid_version']
     socketio.emit('bid_update', {
         'bid': new_bid, 'bidder': team['name'],
         'bidder_color': team['color'], 'bidder_sid': sid,
         'timer': room['timer'], 'room': pub(room),
     }, to=room_id)
+    # Trigger bots to re-evaluate
+    eventlet.spawn_after(random.uniform(1.5, 4.0), _bot_consider_bid, room_id, version)
 
 @socketio.on('send_reaction')
 def on_reaction(data):
     sid = request.sid; room_id = sid_to_room.get(sid); room = rooms.get(room_id)
     if not room: return
     emoji = data.get('emoji','🔥')
-    allowed = ['🔥','😱','💰','👏','😂','🏏','⚡','💎']
-    if emoji not in allowed: return
-    # get name from team or spectator
+    if emoji not in ['🔥','😱','💰','👏','😂','🏏','⚡','💎']: return
     name = room['teams'].get(sid,{}).get('name') or room['spectators'].get(sid,{}).get('name','?')
     reaction = {'emoji': emoji, 'name': name, 'ts': time.time()}
     room['reactions'].append(reaction)
@@ -561,20 +593,11 @@ def on_reaction(data):
 
 @socketio.on('propose_set_jump')
 def on_propose_set_jump(data):
-    """Any player proposes jumping to a different set. Host sees a confirm dialog."""
     sid = request.sid; room_id = sid_to_room.get(sid); room = rooms.get(room_id)
     if not room or room['status'] not in ('bidding','sold','unsold'): return
     if sid_role.get(sid) == 'spectator': return
     set_id = data.get('set_id','')
     if set_id not in ALL_SETS: return
-    # Check set exists and has unseen players
-    auctioned = {p['name'] for p in room['sold_players']+room['unsold_players']}
-    has_players = any(
-        classify_player(p)==set_id and p['name'] not in auctioned
-        for p in room.get('all_players_pool',[])
-    )
-    if not has_players:
-        emit('error', {'msg': 'No remaining players in that set!'}); return
     proposer = room['teams'].get(sid,{}).get('name','?')
     vote = {'set_id': set_id, 'label': ALL_SETS[set_id], 'proposer': proposer, 'sid': sid}
     room['set_vote'] = vote
@@ -582,36 +605,29 @@ def on_propose_set_jump(data):
 
 @socketio.on('confirm_set_jump')
 def on_confirm_set_jump(data):
-    """Host confirms the set jump — inject that set's players next."""
     sid = request.sid; room_id = sid_to_room.get(sid); room = rooms.get(room_id)
     if not room or room['host_sid'] != sid: return
     vote = room.get('set_vote')
     if not vote: return
     set_id = vote['set_id']
     auctioned = {p['name'] for p in room['sold_players']+room['unsold_players']}
-    # Collect unseen players from the requested set
     new_players = [
         dict(p, _set_id=set_id, _set_label=ALL_SETS[set_id], _set_start=False)
-        for p in room['all_players_pool']
+        for p in room['raw_players']
         if classify_player(p)==set_id and p['name'] not in auctioned
     ]
     if not new_players:
         emit('error', {'msg': 'No players left in that set!'}); return
-    random.shuffle(new_players)
-    new_players[0]['_set_start'] = True
-    # Insert new set players right after current position
+    random.shuffle(new_players); new_players[0]['_set_start'] = True
     idx = room['player_index']
     room['players'] = room['players'][:idx+1] + new_players + room['players'][idx+1:]
     room['set_vote'] = None
     socketio.emit('set_jump_confirmed', {
-        'set_label': ALL_SETS[set_id],
-        'count': len(new_players),
-        'room': pub(room)
+        'set_label': ALL_SETS[set_id], 'count': len(new_players), 'room': pub(room)
     }, to=room_id)
 
 @socketio.on('reject_set_jump')
 def on_reject_set_jump(data):
-    """Host rejects the set jump proposal."""
     sid = request.sid; room_id = sid_to_room.get(sid); room = rooms.get(room_id)
     if not room or room['host_sid'] != sid: return
     room['set_vote'] = None

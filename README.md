@@ -81,7 +81,7 @@ python app.py
 Then share your local IP: `http://192.168.x.x:5000`
 
 ## 🔧 Tech Stack
-- **Backend**: Python Flask + Flask-SocketIO (WebSockets)
-- **Frontend**: HTML5, CSS3, Vanilla JavaScript
-- **Real-time**: Socket.IO v4
-- **Data**: JSON (Excel-ready with openpyxl)
+- Backend: Python Flask + Flask-SocketIO (WebSockets)
+- Frontend: HTML5, CSS3, Vanilla JavaScript
+- Real-time: Socket.IO v4
+- Data: JSON (Excel-ready with openpyxl)

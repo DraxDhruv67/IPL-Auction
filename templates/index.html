@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#06080F">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>IPL Mega Auction</title>
+<title>IPL Mega Auction 2025</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
@@ -71,9 +71,17 @@
     </div>
     <div class="lobby-card">
       <div class="input-group"><label>YOUR TEAM NAME</label>
-        <input id="inp-name" type="text" placeholder="e.g. Chennai Champions" maxlength="20" autocomplete="off">
+        <input id="inp-name" type="text" placeholder="e.g. Mumbai Mavericks" maxlength="20" autocomplete="off">
       </div>
       <div class="lobby-actions">
+        <div class="bot-row">
+          <div class="bot-label">🤖 Add bots (for solo play)</div>
+          <div class="bot-stepper">
+            <button class="stepper-btn" onclick="changeBots(-1)">−</button>
+            <span id="bot-count-display">0</span>
+            <button class="stepper-btn" onclick="changeBots(1)">+</button>
+          </div>
+        </div>
         <button class="btn btn-primary" onclick="createRoom()"><span>🏟️</span> CREATE ROOM</button>
         <div class="divider">— OR JOIN —</div>
         <div class="join-row">

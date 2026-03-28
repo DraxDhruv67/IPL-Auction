@@ -179,7 +179,7 @@ function renderTeamsPanel(teams){
       sc.textContent=`👁 ${n} watching`;
     }
   }
-  const html=teams.map(t=>{const bidding=roomState&&roomState.current_bidder_sid===t.sid,me=t.sid===mySid;return`<div class="team-row${bidding?' bidding':''}${me?' my-team':''}"><div class="t-name">${me?'★ ':''}${t.name}</div><div class="t-budget">${fmt(t.budget)}</div><div class="t-count">🏏 ${t.players.length}</div></div>`;}).join('');
+  const html=teams.map(t=>{const bidding=roomState&&roomState.current_bidder_sid===t.sid,me=t.sid===mySid;return`<div class="team-row${bidding?' bidding':''}${me?' my-team':''}${t.is_bot?' bot-team':''}"><div class="t-name">${me?'★ ':''}${t.is_bot?'🤖 ':''}${t.name}</div><div class="t-budget">${fmt(t.budget)}</div><div class="t-count">🏏 ${t.players.length}</div></div>`;}).join('');
   [$id('teams-list'),$id('m-teams-list')].forEach(el=>{if(el)el.innerHTML=html;});
 }
 function renderPlayerCard(player){
@@ -409,7 +409,7 @@ function renderSquads(teams){
   el.innerHTML=teams.map(t=>{
     if(!t.players||!t.players.length)return`<div class="squad-full-card"><div class="squad-full-header" style="border-top:3px solid ${t.color}"><div class="squad-full-name" style="color:${t.color}">${t.name}</div><div class="squad-full-budget">${fmt(t.budget)} left</div></div><div style="padding:14px;color:var(--dim);font-size:13px">No players</div></div>`;
     const g=groupByRole(t.players);
-    const blocks=ROLE_ORDER.map(role=>{const ps=g[role]||[];if(!ps.length)return'';return`<div class="squad-role-group"><div class="squad-role-label ${ROLE_COL[role]}">${ROLE_EMOJI[role]} ${role}s (${ps.length})</div>${ps.map(p=>`<div class="squad-player-row"><span>${p.name}</span><span class="sp-price">${fmt(p.sold_price)}</span></div>`).join('')}</div>`;}).join('');
+    const blocks=ROLE_ORDER.map(role=>{const ps=g[role]||[];if(!ps.length)return'';return`<div class="squad-role-group"><div class="squad-role-label ${ROLE_COL[role]}">${ROLE_EMOJI[role]} ${{"Batsman":"Batsmen","Wicket-Keeper":"Wicket-Keepers","All-Rounder":"All-Rounders","Bowler":"Bowlers"}[role]||role} (${ps.length})</div>${ps.map(p=>`<div class="squad-player-row"><span>${p.name}</span><span class="sp-price">${fmt(p.sold_price)}</span></div>`).join('')}</div>`;}).join('');
     return`<div class="squad-full-card"><div class="squad-full-header" style="border-top:3px solid ${t.color}"><div class="squad-full-name" style="color:${t.color}">${t.name}</div><div class="squad-full-budget">💰 ${fmt(t.budget)} · 🏏 ${t.players.length}</div></div>${blocks}</div>`;
   }).join('');
 }
@@ -468,83 +468,175 @@ function downloadCard(){
 }
 
 function drawResultCard(team){
-  const canvas=$id('result-canvas');
-  const ctx=canvas.getContext('2d');
-  const W=540, H=720;
-  canvas.width=W; canvas.height=H;
+  const W = 560;
+  const ROW_H = 32, HDR_H = 22, SECTION_GAP = 10;
+  const HEADER_AREA = 230; // fixed top section height
+  const FOOTER_H = 36;
+  const PAD = 28;
 
-  // Background gradient
-  const bg=ctx.createLinearGradient(0,0,0,H);
-  bg.addColorStop(0,'#06080F'); bg.addColorStop(1,'#0D1117');
-  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+  // Fix pluralization
+  const rolePlural = {
+    'Batsman': 'BATSMEN',
+    'Wicket-Keeper': 'WICKET-KEEPERS',
+    'All-Rounder': 'ALL-ROUNDERS',
+    'Bowler': 'BOWLERS',
+  };
+  const roleColors = {Batsman:'#E63946','Wicket-Keeper':'#06D6A0','All-Rounder':'#FFD700',Bowler:'#4D9FFF'};
+  const roleEmojis = {Batsman:'🏏','Wicket-Keeper':'🧤','All-Rounder':'⚡',Bowler:'🎯'};
+  const roleOrder  = ['Batsman','Wicket-Keeper','All-Rounder','Bowler'];
 
-  // Gold border
-  ctx.strokeStyle='rgba(255,215,0,0.4)'; ctx.lineWidth=2;
-  ctx.strokeRect(10,10,W-20,H-20);
+  // Group players
+  const groups = {};
+  roleOrder.forEach(r => groups[r] = []);
+  team.players.forEach(p => { (groups[p.role] = groups[p.role]||[]).push(p); });
 
-  // Trophy + title
-  ctx.font='48px serif'; ctx.textAlign='center';
-  ctx.fillText('🏆',W/2,72);
-  ctx.fillStyle='#FFD700';
-  ctx.font='bold 32px "Bebas Neue", sans-serif';
-  ctx.letterSpacing='4px';
-  ctx.fillText('IPL MEGA AUCTION 2025',W/2,112);
+  // Calculate exact height needed
+  let contentH = 0;
+  roleOrder.forEach(role => {
+    const ps = groups[role]||[];
+    if(!ps.length) return;
+    contentH += HDR_H + 6;          // role header
+    contentH += ps.length * ROW_H;  // player rows
+    contentH += SECTION_GAP;        // gap after section
+  });
 
-  // Team name
-  ctx.fillStyle=team.color||'#e9c46a';
-  ctx.font='bold 40px "Bebas Neue", sans-serif';
-  ctx.fillText(team.name.toUpperCase(),W/2,158);
+  const H = HEADER_AREA + contentH + FOOTER_H + 20;
 
-  // Stats bar
-  ctx.fillStyle='rgba(255,255,255,0.06)';
-  ctx.beginPath(); ctx.roundRect(30,170,W-60,52,8); ctx.fill();
-  const spent=10000-team.budget;
-  const stats=[
-    {label:'PLAYERS',val:team.players.length},
-    {label:'SPENT',val:fmt(spent)},
-    {label:'BUDGET LEFT',val:fmt(team.budget)},
+  const canvas = $id('result-canvas');
+  canvas.width  = W;
+  canvas.height = H;
+  // CSS scaling — keep card max 500px wide on screen
+  canvas.style.width  = '100%';
+  canvas.style.height = 'auto';
+
+  const ctx = canvas.getContext('2d');
+
+  // ── Background ──
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#06080F');
+  bg.addColorStop(1, '#0F1520');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Gold border ──
+  ctx.strokeStyle = 'rgba(255,215,0,0.35)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(8, 8, W-16, H-16, 14);
+  ctx.stroke();
+
+  // ── Subtle gold shimmer at top ──
+  const shimmer = ctx.createLinearGradient(0, 0, 0, 120);
+  shimmer.addColorStop(0, 'rgba(255,215,0,0.08)');
+  shimmer.addColorStop(1, 'rgba(255,215,0,0)');
+  ctx.fillStyle = shimmer;
+  ctx.fillRect(8, 8, W-16, 120);
+
+  // ── Trophy emoji ──
+  ctx.font = '42px serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('🏆', W/2, 60);
+
+  // ── Title ──
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 26px Impact, "Arial Narrow", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('IPL MEGA AUCTION 2025', W/2, 96);
+
+  // ── Team name ──
+  ctx.fillStyle = team.color || '#e9c46a';
+  ctx.font = 'bold 38px Impact, "Arial Narrow", sans-serif';
+  ctx.fillText(team.name.toUpperCase(), W/2, 142);
+
+  // ── Stats bar ──
+  const barY = 158, barH = 50;
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  ctx.beginPath(); ctx.roundRect(PAD, barY, W-PAD*2, barH, 8); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,215,0,0.15)'; ctx.lineWidth = 1;
+  ctx.stroke();
+
+  const spent = 10000 - team.budget;
+  const stats = [
+    { label:'PLAYERS', val: String(team.players.length) },
+    { label:'SPENT',   val: fmt(spent) },
+    { label:'BUDGET',  val: fmt(team.budget) },
   ];
-  stats.forEach((s,i)=>{
-    const x=30+(W-60)/6*(i*2+1);
-    ctx.fillStyle='#FFD700'; ctx.font='bold 18px Orbitron,sans-serif'; ctx.textAlign='center';
-    ctx.fillText(s.val,x,197);
-    ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='10px Orbitron,sans-serif';
-    ctx.fillText(s.label,x,213);
+  const colW = (W - PAD*2) / 3;
+  stats.forEach((s, i) => {
+    const x = PAD + colW * i + colW/2;
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 18px Impact, "Arial Narrow", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(s.val, x, barY + 22);
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.font = '10px Arial, sans-serif';
+    ctx.fillText(s.label, x, barY + 38);
   });
 
-  // Divider
-  ctx.strokeStyle='rgba(255,215,0,0.2)'; ctx.lineWidth=1;
-  ctx.beginPath(); ctx.moveTo(30,234); ctx.lineTo(W-30,234); ctx.stroke();
+  // ── Divider ──
+  const divY = barY + barH + 12;
+  ctx.strokeStyle = 'rgba(255,215,0,0.25)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(PAD, divY); ctx.lineTo(W-PAD, divY); ctx.stroke();
 
-  // Role groups
-  const groups={Batsman:[],Bowler:[],'All-Rounder':[],'Wicket-Keeper':[]};
-  team.players.forEach(p=>{(groups[p.role]=groups[p.role]||[]).push(p);});
-  const roleColors={Batsman:'#E63946',Bowler:'#4D9FFF','All-Rounder':'#FFD700','Wicket-Keeper':'#06D6A0'};
-  const roleEmojis={Batsman:'🏏',Bowler:'🎯','All-Rounder':'⚡','Wicket-Keeper':'🧤'};
-  let y=250;
-  ['Batsman','Wicket-Keeper','All-Rounder','Bowler'].forEach(role=>{
-    const ps=groups[role]||[]; if(!ps.length) return;
-    // Role header
-    ctx.fillStyle=roleColors[role];
-    ctx.font='bold 13px Orbitron,sans-serif'; ctx.textAlign='left';
-    ctx.fillText(`${roleEmojis[role]} ${role.toUpperCase()}S (${ps.length})`,30,y);
-    y+=6;
-    // Player rows
-    ps.forEach(p=>{
-      if(y>H-60) return;
-      ctx.fillStyle='rgba(255,255,255,0.04)';
-      ctx.beginPath(); ctx.roundRect(30,y,W-60,30,5); ctx.fill();
-      ctx.fillStyle='#E8EBF0'; ctx.font='bold 14px Rajdhani,sans-serif'; ctx.textAlign='left';
-      ctx.fillText(p.name,44,y+20);
-      ctx.fillStyle='#FFD700'; ctx.font='bold 12px Orbitron,sans-serif'; ctx.textAlign='right';
-      ctx.fillText(fmt(p.sold_price),W-44,y+20);
-      y+=36;
+  // ── Player groups ──
+  let y = divY + 14;
+
+  roleOrder.forEach(role => {
+    const ps = groups[role]||[];
+    if(!ps.length) return;
+
+    const color = roleColors[role];
+    const emoji = roleEmojis[role];
+    const label = `${emoji} ${rolePlural[role]} (${ps.length})`;
+
+    // Role header bg pill
+    ctx.fillStyle = color + '22';
+    ctx.beginPath(); ctx.roundRect(PAD, y, W-PAD*2, HDR_H, 5); ctx.fill();
+    ctx.strokeStyle = color + '55'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.font = 'bold 12px Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(label, PAD + 10, y + 15);
+    y += HDR_H + 6;
+
+    ps.forEach((p, idx) => {
+      // Alternate row shading
+      ctx.fillStyle = idx % 2 === 0
+        ? 'rgba(255,255,255,0.04)'
+        : 'rgba(255,255,255,0.02)';
+      ctx.beginPath(); ctx.roundRect(PAD, y, W-PAD*2, ROW_H - 2, 4); ctx.fill();
+
+      // Player name
+      ctx.fillStyle = '#E8EBF0';
+      ctx.font = 'bold 14px Arial, sans-serif';
+      ctx.textAlign = 'left';
+      // Truncate long names
+      let name = p.name;
+      if(ctx.measureText(name).width > 320) {
+        while(ctx.measureText(name + '…').width > 320 && name.length > 0) name = name.slice(0,-1);
+        name += '…';
+      }
+      ctx.fillText(name, PAD + 10, y + 21);
+
+      // Price
+      ctx.fillStyle = '#FFD700';
+      ctx.font = 'bold 13px Arial, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(fmt(p.sold_price), W - PAD - 8, y + 21);
+
+      y += ROW_H;
     });
-    y+=6;
+    y += SECTION_GAP;
   });
 
-  // Footer
-  ctx.fillStyle='rgba(255,255,255,0.2)';
-  ctx.font='11px Orbitron,sans-serif'; ctx.textAlign='center';
-  ctx.fillText('ipl-auction25-3d.up.railway.app',W/2,H-22);
+  // ── Footer ──
+  const footerY = H - FOOTER_H;
+  ctx.fillStyle = 'rgba(255,215,0,0.08)';
+  ctx.fillRect(0, footerY, W, FOOTER_H);
+  ctx.strokeStyle = 'rgba(255,215,0,0.2)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, footerY); ctx.lineTo(W, footerY); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.font = '11px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('🏏 ipl-auction25-3d.up.railway.app', W/2, footerY + 22);
 }

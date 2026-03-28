@@ -147,17 +147,17 @@ input::placeholder{color:var(--dim)}
 .stage-idle{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;text-align:center}
 
 .set-header-banner{width:100%;max-width:400px;text-align:center;font-family:var(--fd);font-size:14px;letter-spacing:4px;color:var(--gold);background:rgba(255,215,0,.08);border:1px solid rgba(255,215,0,.2);border-radius:8px;padding:6px 12px;flex-shrink:0;animation:popIn .3s ease}
-.player-card{width:100%;max-width:380px;flex-shrink:0;background:linear-gradient(135deg,var(--surf) 0%,var(--bg3) 100%);border:1px solid var(--bord);border-radius:16px;padding:20px 20px 16px;text-align:center;position:relative;overflow:hidden;animation:cardReveal .45s cubic-bezier(.34,1.56,.64,1);box-shadow:0 10px 36px rgba(0,0,0,.5)}
+.player-card{width:100%;max-width:380px;flex-shrink:0;background:linear-gradient(135deg,var(--surf) 0%,var(--bg3) 100%);border:1px solid var(--bord);border-radius:16px;padding:16px 18px 14px;text-align:center;position:relative;overflow:hidden;animation:cardReveal .45s cubic-bezier(.34,1.56,.64,1);box-shadow:0 10px 36px rgba(0,0,0,.5)}
 @keyframes cardReveal{from{transform:scale(.75) rotateY(15deg);opacity:0}to{transform:scale(1) rotateY(0);opacity:1}}
 .player-card::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 65% 25%,rgba(255,215,0,.04),transparent 60%);pointer-events:none}
 .player-number{font-family:var(--fd);font-size:66px;line-height:1;color:rgba(255,255,255,.04);position:absolute;top:0;right:6px}
-.player-role-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px}
+.player-role-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px}
 .role-bat{background:rgba(230,57,70,.2);color:#E63946;border:1px solid rgba(230,57,70,.4)}
 .role-bowl{background:rgba(0,71,204,.2);color:#4D9FFF;border:1px solid rgba(0,71,204,.4)}
 .role-ar{background:rgba(255,215,0,.15);color:var(--gold);border:1px solid rgba(255,215,0,.3)}
 .role-wk{background:rgba(6,214,160,.15);color:var(--green);border:1px solid rgba(6,214,160,.3)}
-.player-name{font-family:var(--fd);font-size:30px;letter-spacing:2px;line-height:1.1;color:#fff;margin-bottom:6px}
-.player-meta{display:flex;gap:10px;justify-content:center;margin-bottom:12px;flex-wrap:wrap}
+.player-name{font-family:var(--fd);font-size:28px;letter-spacing:2px;line-height:1.1;color:#fff;margin-bottom:5px}
+.player-meta{display:flex;gap:10px;justify-content:center;margin-bottom:8px;flex-wrap:wrap}
 .meta-item{font-size:12px;color:var(--dim)}
 .player-base-price{background:rgba(255,215,0,.1);border:1px solid rgba(255,215,0,.2);border-radius:8px;padding:7px 16px;display:inline-block}
 .base-price-label{font-size:10px;letter-spacing:2px;color:var(--dim);margin-bottom:2px}
@@ -312,35 +312,104 @@ input::placeholder{color:var(--dim)}
 .or-fill{height:100%;border-radius:3px}
 .or-val{font-family:var(--fd);font-size:18px;color:var(--gold);flex-shrink:0}
 
-/* ══════════════════════════════════
-   MOBILE RESPONSIVE  ≤ 680px
-   ══════════════════════════════════ */
+/* ══════════════════════════════════════════
+   MOBILE — PRIMARY BREAKPOINT ≤ 680px
+   ══════════════════════════════════════════ */
 @media(max-width:680px){
-  /* Hide desktop sidebar panels — replaced by mobile bottom bar */
-  .teams-panel,.feed-panel{display:none}
-  .hidden-desktop{display:flex!important}  /* show mobile-bar */
-  .auction-layout{grid-template-columns:1fr}
-  .bid-buttons{grid-template-columns:repeat(2,1fr)}
-  /* Bigger touch targets */
-  .bid-btn{padding:13px 4px;font-size:14px}
-  .btn-next,.btn-stop{padding:11px 18px;font-size:14px}
-  /* player name smaller on mobile */
-  .player-name{font-size:26px}
-  /* drawer full width on mobile */
-  .drawer.open .drawer-body{height:220px}
-  /* finished screen */
-  .squads-grid,.formation-grid{grid-template-columns:1fr}
-  .lb-header,.lb-row{grid-template-columns:36px 1fr 52px 70px}
-  /* hide avg col on tiny screens */
-  .lb-header>*:nth-child(4),.lb-row>*:nth-child(4){display:none}
-  /* auth */
-  .auth-wrap{padding:16px}
-  .logo-title{font-size:40px}
+
+  /* ── Lobby / Auth ── */
+  .auth-wrap,.lobby-wrap{ padding:14px; gap:14px; }
+  .logo-title{ font-size:38px; }
+  .trophy-icon{ font-size:40px; }
+  .logo-sub{ font-size:10px; }
+
+  /* ── Auction layout: single column, sidebars hidden ── */
+  .teams-panel,.feed-panel{ display:none; }
+  .hidden-desktop{ display:flex !important; }
+  .auction-layout{ grid-template-columns:1fr; }
+
+  /* ── Topbar: compact, budget on second line if needed ── */
+  .auction-topbar{ padding:6px 10px; gap:6px; flex-wrap:wrap; }
+  .room-pill{ font-size:9px; padding:2px 8px; }
+  .budget-pill{ font-size:9px; padding:2px 8px; }
+  .progress-text{ font-size:9px; top:-13px; }
+
+  /* ── Player stage: compact paddings, smaller card ── */
+  .player-stage{ padding:8px 10px; gap:6px; }
+  .set-header-banner{ font-size:11px; letter-spacing:2px; padding:4px 10px; }
+  .player-card{ padding:14px 14px 12px; border-radius:14px; }
+  .player-number{ font-size:50px; }
+  .player-role-badge{ font-size:9px; padding:2px 8px; margin-bottom:6px; letter-spacing:1px; }
+  .player-name{ font-size:24px; margin-bottom:4px; letter-spacing:1px; }
+  .player-meta{ gap:8px; margin-bottom:8px; }
+  .meta-item{ font-size:11px; }
+  .player-base-price{ padding:5px 12px; }
+  .base-price-label{ font-size:9px; }
+  .base-price-val{ font-size:15px; }
+
+  /* ── Result banner: compact ── */
+  .result-banner{ padding:12px 16px; border-radius:10px; }
+
+  /* ── Bid section: 2×2 grid, bigger buttons ── */
+  .bid-section{ padding:8px 10px; }
+  .current-bid-display{ margin-bottom:6px; }
+  .bid-label{ font-size:9px; letter-spacing:2px; }
+  .bid-amount{ font-size:24px; }
+  .bid-leader{ font-size:11px; }
+  .bid-buttons{ grid-template-columns:repeat(2,1fr); gap:6px; }
+  .bid-btn{
+    padding:14px 4px;
+    font-size:15px;
+    border-radius:10px;
+    min-height:48px;   /* iOS accessibility min tap size */
+  }
+
+  /* ── Host controls: compact row ── */
+  .host-next{ padding:6px 10px; gap:6px; }
+  .btn-next{ font-size:13px; padding:10px 16px; }
+  .btn-skip{ font-size:13px; padding:10px 12px; }
+  .btn-jump{ font-size:12px; padding:10px 10px; }
+  .btn-stop{ font-size:13px; padding:10px 14px; }
+
+  /* ── Reaction bar: emoji only, no text feed shown ── */
+  .reaction-bar{ padding:4px 10px; gap:6px; }
+  .reaction-feed{ display:none; }   /* hide text feed, just keep emoji buttons */
+  .react-btn{ padding:6px 8px; font-size:18px; }
+
+  /* ── Guest jump row ── */
+  .guest-jump-row{ padding:5px 10px; }
+
+  /* ── Mobile bottom bar: taller, better tappable ── */
+  .mobile-bar{ padding:8px 10px; gap:6px; }
+  .mbar-btn{ padding:11px 4px; font-size:13px; min-height:44px; border-radius:10px; }
+
+  /* ── Drawer ── */
+  .drawer-handle{ height:40px; }
+  .drawer-handle-labels{ font-size:9px; letter-spacing:1px; gap:6px; }
+  .drawer.open .drawer-body{ height:210px; }
+  .drawer-tab{ padding:7px 14px; font-size:9px; letter-spacing:1px; }
+
+  /* ── Finished screen ── */
+  .squads-grid,.formation-grid{ grid-template-columns:1fr; }
+  .finished-title{ font-size:32px; }
+  .lb-header,.lb-row{ grid-template-columns:36px 1fr 50px 72px; }
+  .lb-header>*:nth-child(4),.lb-row>*:nth-child(4){ display:none; }
+  .fin-tab{ font-size:9px; padding:5px 12px; }
 }
-@media(max-width:380px){
-  .bid-buttons{grid-template-columns:repeat(2,1fr)}
-  .player-name{font-size:22px}
-  .finished-title{font-size:30px}
+
+/* ══════════════════════════════════════════
+   SMALL PHONES ≤ 390px (iPhone SE, small Android)
+   ══════════════════════════════════════════ */
+@media(max-width:390px){
+  .logo-title{ font-size:32px; }
+  .player-name{ font-size:20px; }
+  .bid-amount{ font-size:20px; }
+  .bid-btn{ font-size:14px; padding:12px 4px; }
+  .btn-next,.btn-skip,.btn-stop{ font-size:12px; padding:9px 10px; }
+  .mbar-btn{ font-size:12px; }
+  .finished-title{ font-size:26px; }
+  .set-header-banner{ font-size:10px; }
+  .react-btn{ padding:5px 6px; font-size:16px; }
 }
 
 /* ══════════════════════════════════════
@@ -381,8 +450,19 @@ input::placeholder{color:var(--dim)}
 .modal-title { font-family:var(--fd); font-size:24px; letter-spacing:3px; color:var(--gold); margin-bottom:10px; }
 .modal-msg { color:var(--dim); font-size:14px; line-height:1.6; margin-bottom:20px; }
 .modal-actions { display:flex; flex-direction:column; gap:10px; }
-.result-card-box { max-width:580px; }
-#result-canvas { width:100%; border-radius:12px; display:block; }
+.result-card-box {
+  max-width: 560px;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+.result-card-box::-webkit-scrollbar { width:4px; }
+.result-card-box::-webkit-scrollbar-thumb { background:rgba(255,215,0,.3); border-radius:2px; }
+#result-canvas {
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  display: block;
+}
 
 /* In-reauction banner */
 .reauction-banner { background:linear-gradient(135deg,rgba(230,57,70,.15),rgba(255,215,0,.1)); border:1px solid rgba(255,215,0,.3); border-radius:8px; padding:6px 14px; text-align:center; font-family:var(--fd); font-size:14px; letter-spacing:2px; color:var(--gold); flex-shrink:0; }
@@ -399,3 +479,15 @@ input::placeholder{color:var(--dim)}
 .btn-jump { background:rgba(107,198,255,.12); border:1px solid rgba(107,198,255,.3); color:#6BC6FF; font-size:13px; padding:9px 14px; }
 .btn-jump:hover { background:rgba(107,198,255,.22); border-color:#6BC6FF; }
 .guest-jump-row { flex-shrink:0; display:flex; justify-content:center; padding:6px 12px; background:var(--bg2); border-top:1px solid var(--bord); }
+
+/* ── BOT STEPPER ── */
+.bot-row { display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,.04); border:1px solid var(--bord); border-radius:8px; padding:10px 14px; margin-bottom:2px; }
+.bot-label { font-size:13px; color:var(--dim); font-weight:600; }
+.bot-stepper { display:flex; align-items:center; gap:12px; }
+.stepper-btn { width:32px; height:32px; background:var(--surf); border:1px solid var(--bord); border-radius:6px; color:var(--text); font-size:18px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; line-height:1; }
+.stepper-btn:hover { border-color:var(--gold); color:var(--gold); }
+#bot-count-display { font-family:var(--fm); font-size:12px; color:var(--gold); min-width:48px; text-align:center; }
+
+/* ── BOT TEAM in sidebar ── */
+.team-row.bot-team { opacity:.85; border-left-color:rgba(107,122,153,.5) !important; }
+.team-row.bot-team .t-name { color:var(--dim); }
