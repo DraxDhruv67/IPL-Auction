@@ -6,7 +6,7 @@ import json, os, uuid, time, random, hashlib
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'ipl_auction_secret_2024'
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # ── State ──────────────────────────────────────────────────────────────────────
 rooms       = {}
@@ -30,6 +30,7 @@ BOT_NAMES = [
 ]
 
 ALL_SETS = {
+    'unsold':        'SET X — UNSOLD PLAYERS',
     'bat_ind_cap':   'SET A1 — INDIAN CAPPED BATSMEN',
     'bat_ind_uncap': 'SET A2 — INDIAN UNCAPPED BATSMEN',
     'bat_foreign':   'SET A3 — FOREIGN BATSMEN',
@@ -132,6 +133,20 @@ def get_min_increment(current_bid):
         if current_bid >= threshold: return inc
     return 10
 
+def snap_bid(current_bid, button_amount):
+    """Snap bid to next clean multiple above current_bid + button_amount.
+    Prevents 50L button at ₹1.8Cr giving ₹2.3Cr instead of ₹2.5Cr."""
+    raw = current_bid + button_amount
+    # Determine the rounding grid at this price level
+    if raw >= 5000:  grid = 500
+    elif raw >= 1000: grid = 100
+    elif raw >= 500:  grid = 50
+    elif raw >= 100:  grid = 25
+    else:             grid = 10
+    # Round UP to next grid boundary
+    remainder = raw % grid
+    return raw if remainder == 0 else raw + (grid - remainder)
+
 # ── Room helpers ───────────────────────────────────────────────────────────────
 def new_room(room_id, host_sid, host_name, selected_sets=None):
     raw = load_players()
@@ -148,12 +163,16 @@ def new_room(room_id, host_sid, host_name, selected_sets=None):
         'current_bidder_sid': None, 'current_bidder_name': None,
         'timer': TIMER_SECONDS,
         # FIX: use a simple integer counter instead of threading.Lock under eventlet
-        'bid_version': 0,      # incremented on each bid/skip to detect stale timers
+        'player_version': 0,   # incremented on new_player/skip -> kills timer greenlet
+        'bid_version': 0,      # incremented on every bid -> guards _close_bid from double-fire
         'sold_players': [], 'unsold_players': [],
         'reauction_pool': [], 'in_reauction': False,
         'set_vote': None, 'reactions': [],
         'started_at': time.time(),
-        'bots': {},   # bot_id -> team dict
+        'bots': {},
+        # Skip vote: tracks who has voted to skip current player
+        'skip_votes': set(),      # set of sids who voted to skip
+        'skip_vote_active': False,
     }
 
 def new_team(sid, name, idx, is_bot=False):
@@ -194,6 +213,9 @@ def pub(room):
         'reactions': room['reactions'][-20:],
         'remaining_sets': remaining_sets,
         'set_vote': room.get('set_vote'),
+        'skip_vote_active': room.get('skip_vote_active', False),
+        'skip_votes': len(room.get('skip_votes', set())),
+        'skip_votes_needed': max(1, len([t for t in room['teams'].values() if not t.get('is_bot')])),
     }
 
 # ── Timer — eventlet-safe, no threading.Lock ─────────────────────────────────
@@ -201,30 +223,29 @@ def _start_timer(room):
     """Start a greenlet-based countdown. Uses bid_version to detect stale timers."""
     room['timer'] = TIMER_SECONDS
     room_id  = room['id']
-    version  = room['bid_version']   # capture current version
+    player_ver = room['player_version']  # only player_version kills the timer
 
     def _run():
-        for remaining in range(TIMER_SECONDS - 1, -1, -1):
+        while True:
             eventlet.sleep(1)
             r = rooms.get(room_id)
-            # Stale check: if bid_version changed or status changed, abort
-            if not r or r['bid_version'] != version or r['status'] != 'bidding':
+            if not r or r['player_version'] != player_ver or r['status'] != 'bidding':
+                return  # new player started or room gone
+            r['timer'] = max(0, r['timer'] - 1)
+            socketio.emit('timer_tick', {'timer': r['timer']}, to=room_id)
+            if r['timer'] <= 0:
+                _close_bid(room_id, r['bid_version'])
                 return
-            r['timer'] = remaining
-            socketio.emit('timer_tick', {'timer': remaining}, to=room_id)
-            if remaining == 0:
-                _close_bid(room_id, version)
 
     eventlet.spawn(_run)
 
 # ── Bid close ─────────────────────────────────────────────────────────────────
-def _close_bid(room_id, expected_version=None):
-    """Close the current bid. expected_version prevents double-close."""
+def _close_bid(room_id, expected_bid_version=None):
+    """Close current bid. expected_bid_version prevents double-close race."""
     room = rooms.get(room_id)
     if not room or room['status'] != 'bidding': return
-    # Version guard — prevents stale timer from closing after a skip/new bid
-    if expected_version is not None and room['bid_version'] != expected_version:
-        return
+    if expected_bid_version is not None and room['bid_version'] != expected_bid_version:
+        return  # another bid landed between timer hitting 0 and this call
     player = room['current_player']
     if room['current_bidder_sid']:
         winner = room['teams'].get(room['current_bidder_sid'])
@@ -243,20 +264,40 @@ def _close_bid(room_id, expected_version=None):
             'color': room['teams'].get(room['current_bidder_sid'],{}).get('color','#fff'),
             'room': pub(room),
         }, to=room_id)
+        # Auto-advance after 5s if host doesn't click Next
+        cap_ver = room['player_version']
+        eventlet.spawn_after(5, _auto_next, room_id, cap_ver)
     else:
+        unsold_tagged = dict(player,
+            _set_id='unsold',
+            _set_label='SET X — UNSOLD PLAYERS',
+            _set_start=False)
         room['unsold_players'].append(player)
-        room['reauction_pool'].append(player)
+        room['reauction_pool'].append(unsold_tagged)
         room['status'] = 'unsold'
         socketio.emit('player_unsold', {'player': player, 'room': pub(room)}, to=room_id)
+        cap_ver = room['player_version']
+        eventlet.spawn_after(5, _auto_next, room_id, cap_ver)
+
+def _auto_next(room_id, expected_player_ver):
+    """Auto-advance to next player if host hasn't clicked Next within 5s."""
+    room = rooms.get(room_id)
+    if not room: return
+    if room['player_version'] != expected_player_ver: return  # host already clicked next
+    if room['status'] not in ('sold', 'unsold'): return
+    _next_player(room_id)
 
 def _finish_auction(room_id):
     room = rooms.get(room_id)
     if not room: return
     if room['reauction_pool'] and not room['in_reauction']:
+        # Mark first unsold player as set_start so header shows
+        pool = room['reauction_pool']
+        pool[0] = dict(pool[0], _set_start=True)
         room['status'] = 'reauction_pending'
         socketio.emit('reauction_available', {
-            'count': len(room['reauction_pool']),
-            'players': [p['name'] for p in room['reauction_pool']],
+            'count': len(pool),
+            'players': [p['name'] for p in pool],
             'room': pub(room),
         }, to=room_id)
         return
@@ -306,57 +347,111 @@ def _next_player(room_id):
     room['current_bidder_sid']  = None
     room['current_bidder_name'] = None
     room['status']              = 'bidding'
-    room['bid_version']        += 1   # invalidate any running timer
+    room['player_version']     += 1
+    room['bid_version']         = 0
+    room['skip_votes']          = set()      # reset skip votes for new player
+    room['skip_vote_active']    = False
     _start_timer(room)
     socketio.emit('new_player', {'player': player, 'room': pub(room)}, to=room_id)
     # Schedule bot bids after a short delay
-    eventlet.spawn_after(2, _bot_consider_bid, room_id, room['bid_version'])
+    eventlet.spawn_after(2, _bot_consider_bid, room_id, room['player_version'])
 
-# ── Bot logic ──────────────────────────────────────────────────────────────────
-def _bot_consider_bid(room_id, version):
-    """Each bot independently decides whether to bid on the current player."""
+# ── Bot AI ────────────────────────────────────────────────────────────────────
+# Bots use a multi-factor valuation model:
+#   - player rating (quality signal)
+#   - squad need (does bot need this role?)
+#   - budget pressure (how much budget is left vs players needed)
+#   - competition (how many other teams are bidding)
+#   - personality style (aggressive/smart/conservative/random)
+
+def _bot_value_player(bot_sid, room):
+    """Multi-factor valuation: rating × need × budget × style."""
+    team   = room['teams'].get(bot_sid, {})
+    bot    = room['bots'].get(bot_sid, {})
+    player = room['current_player']
+    style  = bot.get('style', 'smart')
+    budget = team['budget']
+    if budget <= 0: return 0
+
+    base   = player.get('base_price', 75)
+    rating = player.get('rating', 70)
+    role   = player.get('role', 'Batsman')
+
+    # 1. Rating factor: 70=1.0x, 80=1.5x, 90=2.0x
+    rating_factor = 1.0 + max(0, rating - 70) / 20.0
+
+    # 2. Squad need
+    squad  = team.get('players', [])
+    counts = {}
+    for p in squad:
+        counts[p.get('role','')] = counts.get(p.get('role',''), 0) + 1
+    targets = {'Batsman':4,'Bowler':4,'All-Rounder':2,'Wicket-Keeper':1}
+    have = counts.get(role, 0)
+    need = targets.get(role, 2)
+    if   have == 0:           need_factor = 1.4   # desperately need this role
+    elif have < need:         need_factor = 1.15
+    elif have == need:        need_factor = 0.9
+    else:                     need_factor = 0.65  # overstocked
+
+    # 3. Budget: don't spend more than 40% of remaining on one player (smart/conservative)
+    #    Aggressive bots ignore this cap
+    budget_cap = budget * (0.5 if style=='aggressive' else 0.4 if style=='smart' else 0.3)
+
+    # 4. Style multiplier (randomised per auction to feel natural)
+    seed = bot.get('seed', random.random())  # stable per bot instance
+    if style == 'aggressive':
+        style_mult = 1.5 + seed * 0.3        # 1.5–1.8
+    elif style == 'smart':
+        style_mult = 1.1 + seed * 0.25       # 1.1–1.35
+    elif style == 'conservative':
+        style_mult = 0.8 + seed * 0.2        # 0.8–1.0
+    else:  # random
+        style_mult = 0.9 + random.random() * 1.0  # 0.9–1.9 (re-rolled each time)
+
+    max_pay = int(base * rating_factor * need_factor * style_mult)
+    # Apply hard budget cap
+    max_pay = min(max_pay, budget_cap, budget)
+    # Must at least be willing to pay base price if needed
+    if need_factor >= 1.15:
+        max_pay = max(max_pay, min(base, budget))
+    return int(max_pay)
+
+def _bot_consider_bid(room_id, player_ver):
+    """Wake all bots to independently decide whether to bid."""
     room = rooms.get(room_id)
-    if not room or room['status'] != 'bidding' or room['bid_version'] != version:
-        return
-    for bot_sid, bot in list(room['bots'].items()):
+    if not room or room['status'] != 'bidding': return
+    if room['player_version'] != player_ver: return
+    for bot_sid in list(room['bots'].keys()):
         team = room['teams'].get(bot_sid)
         if not team: continue
-        eventlet.spawn_after(random.uniform(0.5, 4.0), _bot_bid_attempt,
-                             room_id, bot_sid, version)
+        delay = random.uniform(0.5, 2.5)  # faster: was 0.8–3.5
+        eventlet.spawn_after(delay, _bot_bid_attempt, room_id, bot_sid, player_ver)
 
-def _bot_bid_attempt(room_id, bot_sid, version):
+def _bot_bid_attempt(room_id, bot_sid, player_ver):
+    """Single bot decides whether to bid right now."""
     room = rooms.get(room_id)
-    if not room or room['status'] != 'bidding' or room['bid_version'] != version:
-        return
+    if not room or room['status'] != 'bidding': return
+    if room['player_version'] != player_ver: return
     team = room['teams'].get(bot_sid)
     bot  = room['bots'].get(bot_sid)
     if not team or not bot: return
-    if bot_sid == room['current_bidder_sid']: return  # already leading
+    if bot_sid == room['current_bidder_sid']: return
 
-    player   = room['current_player']
-    budget   = team['budget']
-    cur_bid  = room['current_bid']
-    rating   = player.get('rating', 70)
-    style    = bot.get('style', 'smart')
+    cur_bid = room['current_bid']
+    max_pay = _bot_value_player(bot_sid, room)
 
-    # Decide max willingness to pay based on rating + style
-    base_mult = {'aggressive': 1.6, 'smart': 1.25, 'conservative': 1.0, 'random': random.uniform(0.9,1.8)}.get(style, 1.2)
-    max_pay  = min(budget, int(player['base_price'] * base_mult + (rating - 70) * 30))
+    if cur_bid >= max_pay: return
+    inc = get_min_increment(cur_bid)
+    if team['budget'] < cur_bid + inc: return
 
-    if cur_bid >= max_pay: return   # too expensive
-    if budget < cur_bid + get_min_increment(cur_bid): return  # can't afford increment
-
-    # Place the bid
-    inc     = get_min_increment(cur_bid)
-    new_bid = cur_bid + inc
-    if new_bid > budget: return
+    new_bid = snap_bid(cur_bid, inc)
+    if new_bid > team['budget']: return
 
     room['current_bid']         = new_bid
     room['current_bidder_sid']  = bot_sid
     room['current_bidder_name'] = team['name']
     room['timer']               = max(room['timer'], MIN_TIMER_AFTER_BID)
     room['bid_version']        += 1
-    version = room['bid_version']
 
     socketio.emit('bid_update', {
         'bid': new_bid, 'bidder': team['name'],
@@ -364,8 +459,8 @@ def _bot_bid_attempt(room_id, bot_sid, version):
         'timer': room['timer'], 'room': pub(room),
     }, to=room_id)
 
-    # Bot may bid again after a pause if outbid
-    eventlet.spawn_after(random.uniform(3.0, 7.0), _bot_consider_bid, room_id, version)
+    # Other bots re-evaluate quickly after a bid
+    eventlet.spawn_after(random.uniform(1.0, 3.0), _bot_consider_bid, room_id, player_ver)
 
 # ── HTTP ───────────────────────────────────────────────────────────────────────
 @app.route('/')
@@ -461,7 +556,7 @@ def on_create_room(data):
         bteam = new_team(bot_sid, bot_cfg[0], i+1, is_bot=True)
         bteam['color'] = bot_cfg[1]
         room['teams'][bot_sid] = bteam
-        room['bots'][bot_sid]  = {'style': bot_cfg[2]}
+        room['bots'][bot_sid]  = {'style': bot_cfg[2], 'seed': random.random()}
         sid_role[bot_sid] = 'bidder'
     rooms[room_id] = room; sid_to_room[sid] = room_id; sid_role[sid] = 'bidder'
     join_room(room_id)
@@ -510,17 +605,63 @@ def on_next(data):
         emit('error',{'msg':'Cannot proceed right now.'}); return
     _next_player(room_id)
 
-@socketio.on('skip_player')
-def on_skip(data):
+@socketio.on('vote_skip')
+def on_vote_skip(data):
+    """Any bidder votes to skip current player. When all human teams vote, player is skipped."""
     sid = request.sid; room_id = sid_to_room.get(sid); room = rooms.get(room_id)
-    if not room or room['host_sid'] != sid: return
-    if room['status'] != 'bidding': return
+    if not room or room['status'] != 'bidding': return
+    if sid_role.get(sid) == 'spectator': return
+    if room['teams'].get(sid, {}).get('is_bot'): return
+    # Host can force-skip immediately without waiting for all votes
+    if sid == room['host_sid']:
+        _do_skip(room_id); return
+    room['skip_votes'].add(sid)
+    room['skip_vote_active'] = True
+    human_teams = [t for t in room['teams'].values() if not t.get('is_bot')]
+    votes_needed = len(human_teams)
+    votes_cast   = len(room['skip_votes'])
+    socketio.emit('skip_vote_update', {
+        'votes': votes_cast, 'needed': votes_needed,
+        'voter': room['teams'].get(sid, {}).get('name', '?'),
+        'room': pub(room),
+    }, to=room_id)
+    if votes_cast >= votes_needed:
+        _do_skip(room_id)
+
+@socketio.on('retract_skip')
+def on_retract_skip(data):
+    """Bidder retracts their skip vote."""
+    sid = request.sid; room_id = sid_to_room.get(sid); room = rooms.get(room_id)
+    if not room: return
+    room['skip_votes'].discard(sid)
+    if not room['skip_votes']:
+        room['skip_vote_active'] = False
+    socketio.emit('skip_vote_update', {
+        'votes': len(room['skip_votes']),
+        'needed': max(1, len([t for t in room['teams'].values() if not t.get('is_bot')])),
+        'voter': None, 'room': pub(room),
+    }, to=room_id)
+
+def _do_skip(room_id):
+    """Actually skip current player — move to unsold set."""
+    room = rooms.get(room_id)
+    if not room or room['status'] != 'bidding': return
     player = room['current_player']
-    room['bid_version'] += 1   # invalidate running timer
-    room['status'] = 'unsold'  # set BEFORE appending, so timer sees non-bidding status
+    room['player_version'] += 1
+    room['bid_version']    += 1
+    room['skip_votes']      = set()
+    room['skip_vote_active'] = False
+    room['status'] = 'unsold'
+    # Add to unsold_players for record
     room['unsold_players'].append(player)
-    room['reauction_pool'].append(player)
-    socketio.emit('player_unsold', {'player': player, 'room': pub(room)}, to=room_id)
+    # Tag player as part of unsold set and add to reauction_pool
+    unsold_player = dict(player, _set_id='unsold', _set_label='SET X — UNSOLD PLAYERS', _set_start=False)
+    room['reauction_pool'].append(unsold_player)
+    socketio.emit('player_skipped', {
+        'player': player,
+        'room': pub(room),
+        'msg': f"{player['name']} moved to Unsold Players set",
+    }, to=room_id)
 
 @socketio.on('start_reauction')
 def on_start_reauction(data):
@@ -543,7 +684,8 @@ def on_stop(data):
     sid = request.sid; room_id = sid_to_room.get(sid); room = rooms.get(room_id)
     if not room or room['host_sid'] != sid: return
     if room['status'] == 'finished': return
-    room['bid_version'] += 1
+    room['player_version'] += 1
+    room['bid_version']    += 1
     room['reauction_pool'] = []
     _finish_auction_final(room_id)
 
@@ -558,10 +700,13 @@ def on_bid(data):
     try: amount = int(data.get('amount', 0))
     except: return
     if amount <= 0: return
-    min_inc = get_min_increment(room['current_bid'])
+    cur = room['current_bid']
+    min_inc = get_min_increment(cur)
     if amount < min_inc:
-        emit('error',{'msg':f'Min increment is ₹{min_inc}L here!'}); return
-    new_bid = room['current_bid'] + amount
+        # Quietly upgrade to min increment rather than blocking
+        amount = min_inc
+    # Snap to clean grid so +50L at ₹1.8Cr → ₹2.5Cr not ₹2.3Cr
+    new_bid = snap_bid(cur, amount)
     if new_bid > team['budget']:
         emit('error',{'msg':'Not enough budget!'}); return
     if sid == room['current_bidder_sid']:
@@ -571,14 +716,12 @@ def on_bid(data):
     room['current_bidder_name'] = team['name']
     room['timer']               = max(room['timer'], MIN_TIMER_AFTER_BID)
     room['bid_version']        += 1
-    version = room['bid_version']
     socketio.emit('bid_update', {
         'bid': new_bid, 'bidder': team['name'],
         'bidder_color': team['color'], 'bidder_sid': sid,
         'timer': room['timer'], 'room': pub(room),
     }, to=room_id)
-    # Trigger bots to re-evaluate
-    eventlet.spawn_after(random.uniform(1.5, 4.0), _bot_consider_bid, room_id, version)
+    eventlet.spawn_after(random.uniform(1.5, 4.0), _bot_consider_bid, room_id, room['player_version'])
 
 @socketio.on('send_reaction')
 def on_reaction(data):
@@ -632,6 +775,39 @@ def on_reject_set_jump(data):
     if not room or room['host_sid'] != sid: return
     room['set_vote'] = None
     socketio.emit('set_jump_rejected', {'room': pub(room)}, to=room_id)
+
+@socketio.on('propose_end_auction')
+def on_propose_end(data):
+    """Any bidder can propose ending the auction. Host sees a confirm dialog."""
+    sid = request.sid; room_id = sid_to_room.get(sid); room = rooms.get(room_id)
+    if not room or room['status'] not in ('bidding','sold','unsold'): return
+    if sid_role.get(sid) == 'spectator': return
+    proposer = room['teams'].get(sid, {}).get('name', '?')
+    # If host proposes, just end directly
+    if sid == room['host_sid']:
+        room['player_version'] += 1
+        room['bid_version']    += 1
+        room['reauction_pool'] = []
+        _finish_auction_final(room_id)
+        return
+    socketio.emit('end_auction_proposed', {'proposer': proposer}, to=room_id)
+
+@socketio.on('confirm_end_auction')
+def on_confirm_end(data):
+    """Host confirms the end auction proposal."""
+    sid = request.sid; room_id = sid_to_room.get(sid); room = rooms.get(room_id)
+    if not room or room['host_sid'] != sid: return
+    room['player_version'] += 1
+    room['bid_version']    += 1
+    room['reauction_pool'] = []
+    _finish_auction_final(room_id)
+
+@socketio.on('reject_end_auction')
+def on_reject_end(data):
+    """Host rejects the end auction proposal."""
+    sid = request.sid; room_id = sid_to_room.get(sid); room = rooms.get(room_id)
+    if not room or room['host_sid'] != sid: return
+    socketio.emit('end_auction_rejected', {}, to=room_id)
 
 @socketio.on('get_state')
 def on_get_state(data):

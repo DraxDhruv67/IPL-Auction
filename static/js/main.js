@@ -108,6 +108,15 @@ async function showProfile(){
 /* ══════════════════════════════════════
    LOBBY
    ══════════════════════════════════════ */
+/* ── Bot stepper ── */
+let botCount = 0;
+function changeBots(delta){
+  botCount = Math.max(0, Math.min(5, botCount + delta));
+  const el = $id('bot-count-display');
+  if(!el) return;
+  el.textContent = botCount === 0 ? '0' : botCount + (botCount === 1 ? ' bot' : ' bots');
+}
+
 function createRoom(){
   myName=($id('inp-name').value||'').trim();
   if(!myName){toast('Enter a team name!','error');return;}
@@ -115,7 +124,7 @@ function createRoom(){
   const checkboxes=document.querySelectorAll('.set-checks input[type=checkbox]');
   const all=Array.from(checkboxes), selected=all.filter(c=>c.checked).map(c=>c.value);
   const sets=selected.length===all.length?null:selected; // null = all sets
-  socket.emit('create_room',{name:myName,username:currentUser?.username||'',selected_sets:sets});
+  socket.emit('create_room',{name:myName,username:currentUser?.username||'',selected_sets:sets,bots:botCount});
 }
 function toggleSetPicker(){
   const p=$id('set-picker'),a=$id('set-picker-arrow');
@@ -130,10 +139,59 @@ function joinRoom(code, asSpectator=false){
   socket.emit('join_room_req',{name:myName,room_id:code,username:currentUser?.username||'',spectator:asSpectator});
 }
 function startAuction(){socket.emit('start_auction',{});}
-function nextPlayer(){socket.emit('next_player',{});}
+function nextPlayer(){
+  clearAutoNext();
+  socket.emit('next_player',{});
+}
 function placeBid(amt){socket.emit('place_bid',{amount:amt});}
-function stopAuction(){if(!confirm('End the auction now and go to results?'))return;socket.emit('stop_auction',{});}
-function skipPlayer(){if(!isHost)return;socket.emit('skip_player',{});}
+function stopAuction(){socket.emit('stop_auction',{});}
+
+/* ── Auto-next countdown ── */
+let _autoNextTimer = null;
+function startAutoNext(){
+  clearAutoNext();
+  let remaining = 5;
+  const bar   = $id('auto-next-fill');
+  const label = $id('auto-next-label');
+  if(bar)  { bar.style.transition='none'; bar.style.width='100%'; }
+  if(label) label.textContent = `auto in ${remaining}s`;
+  // Animate bar shrinking
+  setTimeout(()=>{ if(bar){ bar.style.transition='width 5s linear'; bar.style.width='0%'; } }, 30);
+  _autoNextTimer = setInterval(()=>{
+    remaining--;
+    if(label) label.textContent = remaining > 0 ? `auto in ${remaining}s` : 'loading…';
+    if(remaining <= 0) clearAutoNext();
+  }, 1000);
+}
+function clearAutoNext(){
+  if(_autoNextTimer){ clearInterval(_autoNextTimer); _autoNextTimer=null; }
+  const bar=$id('auto-next-fill'), label=$id('auto-next-label');
+  if(bar)  { bar.style.transition='none'; bar.style.width='100%'; }
+  if(label) label.textContent='auto in 5s';
+}
+let mySkipVoted = false;
+function voteSkip(){
+  if(mySkipVoted){
+    // Retract vote
+    socket.emit('retract_skip',{});
+    mySkipVoted = false;
+    _updateSkipBtn(false);
+  } else {
+    socket.emit('vote_skip',{});
+    mySkipVoted = true;
+    _updateSkipBtn(true);
+  }
+}
+function _updateSkipBtn(voted){
+  ['skip-vote-btn','skip-vote-count-host'].forEach(id=>{
+    const btn = $id(id);
+    if(!btn) return;
+    if(id.includes('btn')) btn.style.opacity = voted ? '0.6' : '1';
+  });
+}
+function proposeEndAuction(){socket.emit('propose_end_auction',{});}
+function confirmEndAuction(){$id('end-vote-modal').classList.add('hidden');socket.emit('confirm_end_auction',{});}
+function rejectEndAuction(){$id('end-vote-modal').classList.add('hidden');socket.emit('reject_end_auction',{});}
 /* ── SET JUMP ── */
 let _setJumpSets=[];
 function openSetJumpPanel(){
@@ -205,6 +263,26 @@ function updateBid(bid,bidderName,bidderColor,bidderSid){
   if(bidderName){ldr.textContent=`🏅 ${bidderName}`;ldr.className='bid-leader active';ldr.style.color=bidderSid===mySid?'var(--green)':(bidderColor||'');}
   else{ldr.textContent='No bids yet';ldr.className='bid-leader';ldr.style.color='';}
   const w=amt.closest('.current-bid-display');if(w){w.classList.remove('bid-flash');void w.offsetWidth;w.classList.add('bid-flash');}
+  updateBidButtons(bid);
+}
+function snapBid(cur, btn){
+  const raw = cur + btn;
+  let grid;
+  if(raw>=5000) grid=500;
+  else if(raw>=1000) grid=100;
+  else if(raw>=500)  grid=50;
+  else if(raw>=100)  grid=25;
+  else               grid=10;
+  const rem = raw % grid;
+  return rem === 0 ? raw : raw + (grid - rem);
+}
+function updateBidButtons(cur){
+  const btns=[{id:'bid-btn-0',amt:10},{id:'bid-btn-1',amt:50},{id:'bid-btn-2',amt:100},{id:'bid-btn-3',amt:500}];
+  btns.forEach(b=>{
+    const el=$id(b.id); if(!el) return;
+    const snapped = snapBid(cur, b.amt);
+    el.textContent = `→ ${fmt(snapped)}`;
+  });
 }
 function updateTimer(t){
   const ring=$id('timer-ring'),txt=$id('timer-text');if(!ring||!txt)return;
@@ -249,14 +327,20 @@ socket.on('room_update',d=>{
 socket.on('notification',d=>{toast(d.msg,'info');feed(d.msg,'info');});
 socket.on('new_player',d=>{
   roomState=d.room;showScreen('screen-auction');
+  clearAutoNext();
   $id('host-next').classList.add('hidden');
+  // Show correct controls: host gets bid-controls (skip+sets), guests get propose controls
+  mySkipVoted = false;
+  [$id('skip-vote-count'),$id('skip-vote-count-host')].forEach(el=>{if(el)el.textContent='';});
+  const hbc=$id('host-bid-controls'), gc=$id('guest-controls');
+  if(hbc) hbc.classList.toggle('hidden',!isHost);
+  if(gc)  gc.classList.toggle('hidden', isHost||isSpectator);
   renderTeamsPanel(d.room.teams);renderPlayerCard(d.player);
   updateBid(d.player.base_price,null,null,null);
+  // Reset bid button labels for base price
+  updateBidButtons(d.player.base_price);
   updateProgress(d.room.sold_count,d.room.total_players);updateMyBudget();updateTimer(TIMER_MAX);
   $id('bid-section').classList.toggle('hidden', isSpectator);
-  // Show jump button: host sees it in host-next, guests get their own row
-  const gjr=$id('guest-jump-row');
-  if(gjr) gjr.classList.toggle('hidden', isHost||isSpectator);
   const stage=$id('player-stage');if(stage)stage.scrollTop=0;
   feed(`🆕 ${d.player.name} (${d.player.role})`,'new');sndNew();updateDrawer(d.room);
 });
@@ -271,14 +355,48 @@ socket.on('player_sold',d=>{
   $id('bid-section').classList.add('hidden');updateTimer(0);
   showBanner(`<div style="font-size:28px;margin-bottom:5px">🎉 SOLD!</div><div style="font-family:var(--fd);font-size:22px;color:#fff">${d.player.name}</div><div style="font-family:var(--fm);font-size:24px;color:var(--gold);margin:5px 0">${fmt(d.price)}</div><div style="font-size:13px;font-weight:700;color:${d.color||'var(--green)'}">▶ ${d.team}</div>`,'sold-banner');
   feed(`✅ ${d.player.name} → ${d.team} @ ${fmt(d.price)}`,'sold');sndSold();updateDrawer(d.room);
-  if(isHost)$id('host-next').classList.remove('hidden');
+  if(isHost){$id('host-next').classList.remove('hidden');const hbc=$id('host-bid-controls');if(hbc)hbc.classList.add('hidden');startAutoNext();}
+  const gc2=$id('guest-controls');if(gc2)gc2.classList.add('hidden');
 });
 socket.on('player_unsold',d=>{
   roomState=d.room;$id('bid-section').classList.add('hidden');updateTimer(0);
-  showBanner(`<div style="font-size:28px;margin-bottom:5px">❌ UNSOLD</div><div style="font-family:var(--fd);font-size:22px;color:var(--dim)">${d.player.name}</div><div style="color:var(--red);font-size:12px;margin-top:5px">No bids placed</div>`,'unsold-banner');
+  showBanner(`<div style="font-size:28px;margin-bottom:5px">❌ UNSOLD</div><div style="font-family:var(--fd);font-size:22px;color:var(--dim)">${d.player.name}</div><div style="color:var(--red);font-size:12px;margin-top:5px">Added to unsold set</div>`,'unsold-banner');
   feed(`❌ ${d.player.name} — unsold`,'info');sndUnsold();updateDrawer(d.room);
-  if(isHost)$id('host-next').classList.remove('hidden');
+  if(isHost){$id('host-next').classList.remove('hidden');const hbc=$id('host-bid-controls');if(hbc)hbc.classList.add('hidden');startAutoNext();}
+  const gc3=$id('guest-controls');if(gc3)gc3.classList.add('hidden');
 });
+socket.on('skip_vote_update',d=>{
+  roomState=d.room;
+  const count = d.votes, needed = d.needed;
+  const label = `${count}/${needed}`;
+  [$id('skip-vote-count'),$id('skip-vote-count-host')].forEach(el=>{if(el) el.textContent=count>0?` (${label})`:''});
+  if(d.voter) feed(`⏩ ${d.voter} voted to skip (${label})`,'info');
+});
+
+socket.on('player_skipped',d=>{
+  roomState=d.room;
+  mySkipVoted=false;
+  $id('bid-section').classList.add('hidden');
+  updateTimer(0);
+  showBanner(`<div style="font-size:26px;margin-bottom:5px">⏩ SKIPPED</div><div style="font-family:var(--fd);font-size:22px;color:var(--dim)">${d.player.name}</div><div style="color:var(--gold);font-size:12px;margin-top:6px">Added to Unsold Players set</div>`,'unsold-banner');
+  feed(`⏩ ${d.player.name} skipped → Unsold Set`,'info');
+  renderTeamsPanel(d.room.teams);
+  if(isHost){$id('host-next').classList.remove('hidden');const hbc=$id('host-bid-controls');if(hbc)hbc.classList.add('hidden');startAutoNext();}
+  const gc=$id('guest-controls');if(gc)gc.classList.add('hidden');
+});
+
+socket.on('end_auction_proposed',d=>{
+  if(isHost){
+    $id('end-vote-msg').textContent=`${d.proposer} wants to end the auction. Confirm?`;
+    $id('end-vote-modal').classList.remove('hidden');
+  } else {
+    toast(`🏁 ${d.proposer} proposed ending the auction…`,'info');
+  }
+});
+socket.on('end_auction_rejected',()=>{
+  toast('Host chose to continue the auction','info');
+});
+
 socket.on('set_jump_proposed',d=>{
   roomState=d.room;
   if(isHost){

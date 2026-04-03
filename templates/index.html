@@ -71,15 +71,15 @@
     </div>
     <div class="lobby-card">
       <div class="input-group"><label>YOUR TEAM NAME</label>
-        <input id="inp-name" type="text" placeholder="e.g. Mumbai Mavericks" maxlength="20" autocomplete="off">
+        <input id="inp-name" type="text" placeholder="e.g. Chennai Champions" maxlength="20" autocomplete="off">
       </div>
       <div class="lobby-actions">
         <div class="bot-row">
           <div class="bot-label">🤖 Add bots (for solo play)</div>
           <div class="bot-stepper">
-            <button class="stepper-btn" onclick="changeBots(-1)">−</button>
+            <button class="stepper-btn" onclick="changeBots(-1)">&#8722;</button>
             <span id="bot-count-display">0</span>
-            <button class="stepper-btn" onclick="changeBots(1)">+</button>
+            <button class="stepper-btn" onclick="changeBots(1)">&#43;</button>
           </div>
         </div>
         <button class="btn btn-primary" onclick="createRoom()"><span>🏟️</span> CREATE ROOM</button>
@@ -185,10 +185,10 @@
           <div id="bid-leader" class="bid-leader">No bids yet</div>
         </div>
         <div class="bid-buttons">
-          <button class="bid-btn" onclick="placeBid(10)">+₹10L</button>
-          <button class="bid-btn" onclick="placeBid(50)">+₹50L</button>
-          <button class="bid-btn bid-btn-red" onclick="placeBid(100)">+₹1Cr</button>
-          <button class="bid-btn bid-btn-gold" onclick="placeBid(500)">+₹5Cr</button>
+          <button id="bid-btn-0" class="bid-btn" onclick="placeBid(10)">+₹10L</button>
+          <button id="bid-btn-1" class="bid-btn" onclick="placeBid(50)">+₹50L</button>
+          <button id="bid-btn-2" class="bid-btn bid-btn-red" onclick="placeBid(100)">+₹1Cr</button>
+          <button id="bid-btn-3" class="bid-btn bid-btn-gold" onclick="placeBid(500)">+₹5Cr</button>
         </div>
       </div>
       <!-- Reaction bar -->
@@ -203,15 +203,27 @@
           <button class="react-btn" onclick="sendReaction('💎')">💎</button>
         </div>
       </div>
-      <div id="host-next" class="host-next hidden">
-        <button class="btn btn-next" onclick="nextPlayer()">⏭ NEXT</button>
-        <button class="btn btn-skip" onclick="skipPlayer()">⏩ SKIP</button>
+      <!-- Host bidding controls — shown DURING active bidding -->
+      <div id="host-bid-controls" class="host-bid-controls hidden">
+        <button class="btn btn-skip" onclick="voteSkip()">⏩ SKIP <span id="skip-vote-count-host" class="vote-count"></span></button>
         <button class="btn btn-jump" onclick="openSetJumpPanel()">📋 SETS</button>
-        <button class="btn btn-stop" onclick="stopAuction()">🏁 END</button>
+        <button class="btn btn-end-propose" onclick="stopAuction()">🏁 END</button>
       </div>
-      <!-- Non-host set jump button -->
-      <div id="guest-jump-row" class="guest-jump-row hidden">
-        <button class="btn btn-jump" onclick="openSetJumpPanel()">📋 PROPOSE SET JUMP</button>
+      <!-- Host next — shown AFTER sold/unsold, with auto-next countdown -->
+      <div id="host-next" class="host-next hidden">
+        <button class="btn btn-next" onclick="nextPlayer()">⏭ NEXT PLAYER</button>
+        <div class="auto-next-wrap">
+          <div id="auto-next-bar" class="auto-next-bar">
+            <div id="auto-next-fill" class="auto-next-fill"></div>
+          </div>
+          <span id="auto-next-label" class="auto-next-label">auto in 5s</span>
+        </div>
+      </div>
+      <!-- Any player: propose end / set jump — shown during bidding -->
+      <div id="guest-controls" class="guest-controls hidden">
+        <button class="btn btn-skip" onclick="voteSkip()" id="skip-vote-btn">⏩ SKIP <span id="skip-vote-count" class="vote-count"></span></button>
+        <button class="btn btn-jump" onclick="openSetJumpPanel()">📋 SETS</button>
+        <button class="btn btn-end-propose" onclick="proposeEndAuction()">🏁 END?</button>
       </div>
     </main>
     <aside class="feed-panel">
@@ -309,6 +321,19 @@
     <p class="modal-msg">Propose switching to a different set. Host must approve.</p>
     <div id="set-jump-options" class="set-jump-options"></div>
     <button class="btn btn-secondary" style="margin-top:10px;width:100%" onclick="closeSetJumpPanel()">CANCEL</button>
+  </div>
+</div>
+
+<!-- Propose End modal — host sees vote -->
+<div id="end-vote-modal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-icon">🏁</div>
+    <h3 class="modal-title">END AUCTION?</h3>
+    <p id="end-vote-msg" class="modal-msg"></p>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="confirmEndAuction()">🏁 END NOW</button>
+      <button class="btn btn-stop" onclick="rejectEndAuction()">✕ CONTINUE</button>
+    </div>
   </div>
 </div>
 
