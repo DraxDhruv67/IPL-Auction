@@ -48,7 +48,7 @@ http://localhost:5000
 1. Enter your team name
 2. Enter the room code and click **JOIN**
 3. Wait for host to start
-4. Bid using **+₹10L / +₹50L / +₹1Cr / +₹5Cr** buttons
+4. Bid using **+₹10L / +₹50L / +₹100L (1Cr) / +₹200L (2Cr)** buttons
 5. Each team starts with ₹100 Crore budget
 
 ## ⌨️ Keyboard Shortcuts (in auction)
@@ -57,7 +57,7 @@ http://localhost:5000
 | `1` | Bid +₹10L |
 | `2` | Bid +₹50L |
 | `3` | Bid +₹1 Cr |
-| `4` | Bid +₹5 Cr |
+| `4` | Bid +₹2 Cr |
 | `n` | Next player (host only) |
 
 ## 📊 Player Dataset

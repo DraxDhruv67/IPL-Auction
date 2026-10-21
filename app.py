@@ -5,8 +5,9 @@ from flask_socketio import SocketIO, emit, join_room
 import json, os, uuid, time, random, hashlib
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'ipl_auction_secret_2024'
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'ipl_auction_secret_2024')
+async_mode = 'threading' if os.name == 'nt' and 'PORT' not in os.environ else 'eventlet'
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode=async_mode)
 
 # ── State ──────────────────────────────────────────────────────────────────────
 rooms       = {}
@@ -701,12 +702,7 @@ def on_bid(data):
     except: return
     if amount <= 0: return
     cur = room['current_bid']
-    min_inc = get_min_increment(cur)
-    if amount < min_inc:
-        # Quietly upgrade to min increment rather than blocking
-        amount = min_inc
-    # Snap to clean grid so +50L at ₹1.8Cr → ₹2.5Cr not ₹2.3Cr
-    new_bid = snap_bid(cur, amount)
+    new_bid = cur + amount
     if new_bid > team['budget']:
         emit('error',{'msg':'Not enough budget!'}); return
     if sid == room['current_bidder_sid']:
@@ -816,4 +812,4 @@ def on_get_state(data):
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    socketio.run(app, host='0.0.0.0', port=port, debug=False, use_reloader=False)
+    socketio.run(app, host='0.0.0.0', port=port, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)

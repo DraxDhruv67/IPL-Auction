@@ -16,7 +16,7 @@ const sndUnsold=()=>[400,300,200].forEach((f,i)=>setTimeout(()=>beep(f,.12,'sawt
 const sndUrgent=()=>beep(900,.04,'square',.12);
 
 /* ── Utils ── */
-function fmt(l){if(l==null)return'—';if(l>=100)return`₹${(l/100).toFixed(l%100===0?0:1)} Cr`;return`₹${l} L`;}
+function fmt(l){if(l==null)return'—';if(l>=100){const v=l/100;const s=v%1===0?v.toFixed(0):(v*10%1===0?v.toFixed(1):v.toFixed(2));return '₹' + s + ' Cr';}return '₹' + l + ' L';}
 const ROLE_CSS={Batsman:'role-bat',Bowler:'role-bowl','All-Rounder':'role-ar','Wicket-Keeper':'role-wk'};
 const ROLE_EMOJI={Batsman:'🏏',Bowler:'🎯','All-Rounder':'⚡','Wicket-Keeper':'🧤'};
 const ROLE_ORDER=['Batsman','Wicket-Keeper','All-Rounder','Bowler'];
@@ -277,12 +277,7 @@ function snapBid(cur, btn){
   return rem === 0 ? raw : raw + (grid - rem);
 }
 function updateBidButtons(cur){
-  const btns=[{id:'bid-btn-0',amt:10},{id:'bid-btn-1',amt:50},{id:'bid-btn-2',amt:100},{id:'bid-btn-3',amt:500}];
-  btns.forEach(b=>{
-    const el=$id(b.id); if(!el) return;
-    const snapped = snapBid(cur, b.amt);
-    el.textContent = `→ ${fmt(snapped)}`;
-  });
+  // Buttons remain static: +₹10L, +₹50L, +₹100L / 1Cr, +₹200L / 2Cr
 }
 function updateTimer(t){
   const ring=$id('timer-ring'),txt=$id('timer-text');if(!ring||!txt)return;
@@ -460,7 +455,7 @@ loadRooms();
 document.addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT')return;
   if(!$id('screen-auction').classList.contains('active'))return;
-  if(e.key==='1')placeBid(10);if(e.key==='2')placeBid(50);if(e.key==='3')placeBid(100);if(e.key==='4')placeBid(500);
+  if(e.key==='1')placeBid(10);if(e.key==='2')placeBid(50);if(e.key==='3')placeBid(100);if(e.key==='4')placeBid(200);
   if((e.key==='n'||e.key==='N')&&isHost)nextPlayer();
 });
 $id('inp-name').addEventListener('keydown',e=>{if(e.key==='Enter')createRoom();});
