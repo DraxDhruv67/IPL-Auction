@@ -67,42 +67,89 @@ async function doRegister(){
 function showAuthErr(panel,msg){const el=$id(`${panel}-err`);el.textContent=msg;el.classList.remove('hidden');setTimeout(()=>el.classList.add('hidden'),4000);}
 function logout(){currentUser=null;localStorage.removeItem('ipl_user');showScreen('screen-auth');updateUserBadge();}
 function updateUserBadge(){
-  const badge=$id('user-badge'),name=$id('user-badge-name');
-  if(currentUser&&badge){badge.classList.remove('hidden');if(name)name.textContent=currentUser.display||currentUser.username;}
-  else if(badge) badge.classList.add('hidden');
-  // pre-fill team name from display name
-  if(currentUser){const inp=$id('inp-name');if(inp&&!inp.value)inp.value=currentUser.display||'';}
+  const badge=$id('user-badge'), guest=$id('guest-badge'), name=$id('user-badge-name');
+  if(currentUser){
+    if(badge) badge.classList.remove('hidden');
+    if(guest) guest.classList.add('hidden');
+    if(name) name.textContent=currentUser.display||currentUser.username;
+    const inp=$id('inp-name');
+    if(inp&&!inp.value) inp.value=currentUser.display||'';
+  } else {
+    if(badge) badge.classList.add('hidden');
+    if(guest) guest.classList.remove('hidden');
+  }
 }
+
 async function showProfile(){
-  if(!currentUser)return;
+  if(!currentUser){
+    showScreen('screen-auth');
+    return;
+  }
   showScreen('screen-profile');
   const res=await fetch(`/api/profile/${currentUser.username}`);
   const data=await res.json();
-  if(!data.ok){$id('profile-body').innerHTML='<p style="color:var(--dim);padding:20px">Failed to load profile</p>';return;}
+  if(!data.ok){
+    $id('profile-body').innerHTML='<p style="color:var(--dim);padding:20px">Failed to load profile data.</p>';
+    return;
+  }
   const recs=data.records||[];
   const totalSpend=recs.reduce((s,r)=>s+(r.total_spend||0),0);
   const totalPlayers=recs.reduce((s,r)=>s+(r.players_won||0),0);
+  const initial=(currentUser.display||currentUser.username||'U')[0].toUpperCase();
+
   $id('profile-body').innerHTML=`
-    <div class="profile-stat-row">
-      <div class="pstat"><div class="pstat-val">${recs.length}</div><div class="pstat-label">AUCTIONS</div></div>
-      <div class="pstat"><div class="pstat-val">${totalPlayers}</div><div class="pstat-label">PLAYERS WON</div></div>
-      <div class="pstat"><div class="pstat-val">${fmt(totalSpend)}</div><div class="pstat-label">TOTAL SPENT</div></div>
-    </div>
-    <h3 style="font-family:var(--fd);font-size:20px;letter-spacing:2px;color:var(--gold);margin:4px 0">RECENT AUCTIONS</h3>
-    ${recs.length?recs.map(r=>`
-      <div class="record-card">
-        <div class="record-date">${r.date} · Room ${r.room_id}</div>
-        <div class="record-team">${r.team_name}</div>
-        <div class="record-stats">
-          <div class="rstat">Players won: <span>${r.players_won}</span></div>
-          <div class="rstat">Spent: <span>${fmt(r.total_spend)}</span></div>
-          <div class="rstat">Left: <span>${fmt(r.budget_left)}</span></div>
+    <div class="profile-meta-card">
+      <div class="profile-user-info">
+        <div class="profile-avatar-large">${initial}</div>
+        <div>
+          <div class="profile-display-name">${currentUser.display || currentUser.username}</div>
+          <div class="profile-username-tag">@${currentUser.username} · Member since ${data.created || '2025'}</div>
         </div>
-        ${r.squad&&r.squad.length?`<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px">
-          ${r.squad.slice(0,6).map(p=>`<span style="background:var(--bg3);border:1px solid var(--bord);border-radius:5px;padding:2px 8px;font-size:11px">${p.name}</span>`).join('')}
-          ${r.squad.length>6?`<span style="color:var(--dim);font-size:11px;align-self:center">+${r.squad.length-6} more</span>`:''}
-        </div>`:''}
-      </div>`).join(''):'<p style="color:var(--dim);font-size:13px">No auctions yet. Play and your records will appear here!</p>'}`;
+      </div>
+      <button class="btn btn-sm btn-secondary" onclick="logout()">LOGOUT ↩</button>
+    </div>
+
+    <div class="profile-stat-row">
+      <div class="pstat"><div class="pstat-val">${recs.length}</div><div class="pstat-label">MATCHES PLAYED</div></div>
+      <div class="pstat"><div class="pstat-val">${totalPlayers}</div><div class="pstat-label">PLAYERS WON</div></div>
+      <div class="pstat"><div class="pstat-val">${fmt(totalSpend)}</div><div class="pstat-label">TOTAL PURSE SPENT</div></div>
+    </div>
+
+    <h3 style="font-family:var(--fd);font-size:22px;letter-spacing:2px;color:var(--gold);margin:10px 0 4px">AUCTION MATCH HISTORY</h3>
+    ${recs.length ? recs.map(r=>`
+      <div class="record-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div class="record-team">${r.team_name}</div>
+          <div class="record-date">Room: <strong>${r.room_id}</strong> · ${r.date}</div>
+        </div>
+        <div class="record-stats">
+          <div class="rstat">Squad: <span>${r.players_won} players</span></div>
+          <div class="rstat">Spent: <span>${fmt(r.total_spend)}</span></div>
+          <div class="rstat">Purse Left: <span>${fmt(r.budget_left)}</span></div>
+        </div>
+        ${r.squad && r.squad.length ? `
+          <div style="margin-top:10px;font-size:11px;font-family:var(--fm);color:var(--dim);letter-spacing:1px">ACQUIRED SQUAD:</div>
+          <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">
+            ${r.squad.map(p=>{
+              const emoji = ROLE_EMOJI[p.role] || '🏏';
+              return `<div class="squad-pill">
+                <span>${emoji}</span>
+                <strong>${p.name}</strong>
+                <span class="pill-price">(${fmt(p.price)})</span>
+              </div>`;
+            }).join('')}
+          </div>
+        ` : '<div style="margin-top:6px;font-size:11px;color:var(--dim)">No players bought in this auction.</div>'}
+      </div>
+    `).join('') : `
+      <div style="text-align:center;padding:30px 10px;background:var(--surf);border:1px solid var(--bord);border-radius:12px">
+        <div style="font-size:36px;margin-bottom:8px">🏏</div>
+        <p style="color:var(--text);font-family:var(--fb);font-size:16px">No matches on record yet!</p>
+        <p style="color:var(--dim);font-size:12px;margin-top:4px">Create or join an auction room to start building your franchise history.</p>
+        <button class="btn btn-primary" style="margin-top:16px" onclick="showScreen('screen-lobby')">GO TO LOBBY</button>
+      </div>
+    `}
+  `;
 }
 
 /* ══════════════════════════════════════
@@ -752,4 +799,63 @@ function drawResultCard(team){
   ctx.font = '11px Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText('🏏 ipl-auction25-3d.up.railway.app', W/2, footerY + 22);
+}
+
+
+/* ── PWA Install & Banner Logic ── */
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const banner = $id('pwa-install-banner');
+  if (banner && !sessionStorage.getItem('pwa_dismissed')) {
+    banner.classList.remove('hidden');
+  }
+  const pwaBtn = $id('pwa-header-btn');
+  if (pwaBtn) pwaBtn.style.display = 'inline-flex';
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredPrompt = null;
+  const banner = $id('pwa-install-banner');
+  if (banner) banner.classList.add('hidden');
+  const pwaBtn = $id('pwa-header-btn');
+  if (pwaBtn) pwaBtn.style.display = 'none';
+  toast('IPL Auction app installed successfully! 🏆', 'success');
+});
+
+function triggerPWAInstall() {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then((choiceResult) => {
+      if (choiceResult.outcome === 'accepted') {
+        toast('Installing IPL Auction... 📲', 'info');
+      }
+      deferredPrompt = null;
+      dismissPWABanner();
+    });
+  } else {
+    // Show instruction guide modal (for iOS or manual install)
+    const modal = $id('pwa-guide-modal');
+    if (modal) modal.classList.remove('hidden');
+  }
+}
+
+function dismissPWABanner() {
+  const banner = $id('pwa-install-banner');
+  if (banner) banner.classList.add('hidden');
+  sessionStorage.setItem('pwa_dismissed', 'true');
+}
+
+function closePwaGuide() {
+  const modal = $id('pwa-guide-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+/* ── Startup: Auto-restore session if logged in ── */
+if (currentUser) {
+  showScreen('screen-lobby');
+  updateUserBadge();
+} else {
+  updateUserBadge();
 }

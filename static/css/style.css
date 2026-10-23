@@ -563,3 +563,218 @@ input::placeholder{color:var(--dim)}
 .auto-next-bar { position:relative; height:3px; background:rgba(255,255,255,.1); border-radius:2px; width:110px; overflow:hidden; }
 .auto-next-fill { height:100%; background:var(--gold); border-radius:2px; width:100%; }
 .auto-next-label { font-size:10px; color:var(--dim); font-family:var(--fm); letter-spacing:1px; }
+
+
+/* ── PWA Floating Banner ── */
+.pwa-banner {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 24px);
+  max-width: 600px;
+  background: rgba(18, 24, 38, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--gold);
+  border-radius: 12px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  z-index: 9999;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.6), 0 0 15px rgba(255,215,0,0.2);
+  animation: slideDown 0.3s ease-out;
+}
+@keyframes slideDown {
+  from { transform: translate(-50%, -20px); opacity: 0; }
+  to { transform: translate(-50%, 0); opacity: 1; }
+}
+.pwa-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.pwa-banner-icon { font-size: 24px; flex-shrink: 0; }
+.pwa-banner-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.pwa-banner-text strong {
+  font-family: var(--fb);
+  font-size: 13px;
+  color: var(--gold);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pwa-banner-text span {
+  font-family: var(--fm);
+  font-size: 10px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pwa-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.btn-pwa-install {
+  background: linear-gradient(135deg, var(--gold), #ffaa00);
+  color: #000;
+  border: none;
+  font-family: var(--fb);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.btn-pwa-install:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255,215,0,0.4);
+}
+.btn-pwa-close {
+  background: transparent;
+  border: none;
+  color: var(--dim);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+}
+.btn-pwa-close:hover { color: #fff; }
+
+/* ── Lobby User Bar & Actions ── */
+.lobby-user-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.user-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 215, 0, 0.1);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-family: var(--fm);
+  font-size: 12px;
+  color: var(--gold);
+}
+.user-avatar-icon { font-size: 14px; }
+.user-badge-name { font-weight: 700; }
+.btn-badge-action {
+  background: var(--surf);
+  border: 1px solid var(--bord);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--fm);
+  font-size: 11px;
+  padding: 5px 10px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: all 0.15s;
+}
+.btn-badge-action:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+.btn-badge-profile {
+  background: rgba(255, 215, 0, 0.15);
+  border-color: var(--gold);
+  color: var(--gold);
+  font-weight: 700;
+}
+.btn-badge-logout { color: var(--dim); padding: 5px 8px; }
+.btn-badge-login {
+  background: rgba(42, 157, 143, 0.2);
+  border-color: #2a9d8f;
+  color: #2a9d8f;
+  font-weight: 700;
+}
+.btn-pwa-header {
+  background: rgba(131, 56, 236, 0.2);
+  border-color: #8338ec;
+  color: #d1b3ff;
+  font-weight: 700;
+}
+
+/* ── Enhanced Profile View & Squads ── */
+.profile-meta-card {
+  background: var(--surf);
+  border: 1px solid var(--bord);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.profile-user-info { display: flex; align-items: center; gap: 12px; }
+.profile-avatar-large {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--gold), #e63946);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: #000;
+  font-weight: 700;
+}
+.profile-display-name {
+  font-family: var(--fd);
+  font-size: 22px;
+  color: var(--gold);
+  letter-spacing: 1px;
+  line-height: 1.1;
+}
+.profile-username-tag {
+  font-family: var(--fm);
+  font-size: 11px;
+  color: var(--dim);
+}
+.squad-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg3);
+  border: 1px solid var(--bord);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-family: var(--fm);
+}
+.squad-pill .pill-price {
+  color: var(--gold);
+  font-weight: 700;
+}
+.pwa-guide-steps {
+  text-align: left;
+  background: var(--bg2);
+  border-radius: 10px;
+  padding: 14px;
+  font-family: var(--fm);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.pwa-step-title {
+  font-weight: 700;
+  color: var(--gold);
+  margin-bottom: 3px;
+}

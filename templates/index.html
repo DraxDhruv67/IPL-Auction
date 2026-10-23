@@ -26,6 +26,21 @@ if ('serviceWorker' in navigator) {
 </head>
 <body>
 
+<!-- ── PWA INSTALL BANNER ── -->
+<div id="pwa-install-banner" class="pwa-banner hidden">
+  <div class="pwa-banner-content">
+    <span class="pwa-banner-icon">🏆</span>
+    <div class="pwa-banner-text">
+      <strong>Install IPL Mega Auction App</strong>
+      <span>Full-screen app · Faster loading · Offline squads</span>
+    </div>
+  </div>
+  <div class="pwa-banner-actions">
+    <button class="btn-pwa-install" onclick="triggerPWAInstall()">📲 INSTALL</button>
+    <button class="btn-pwa-close" onclick="dismissPWABanner()" title="Close">✕</button>
+  </div>
+</div>
+
 <!-- ── LOGIN / REGISTER ── -->
 <div id="screen-auth" class="screen active">
   <div class="auth-bg"></div>
@@ -76,10 +91,17 @@ if ('serviceWorker' in navigator) {
         <h1 class="logo-title">IPL MEGA<br><span>AUCTION</span></h1>
         <p class="logo-sub">2025 SEASON</p>
       </div>
-      <div id="user-badge" class="user-badge hidden">
-        <span id="user-badge-name"></span>
-        <button onclick="showProfile()" class="badge-btn">📊</button>
-        <button onclick="logout()" class="badge-btn">↩</button>
+      <div class="lobby-user-bar">
+        <div id="user-badge" class="user-badge hidden">
+          <span class="user-avatar-icon">👤</span>
+          <span id="user-badge-name" class="user-badge-name"></span>
+          <button onclick="showProfile()" class="btn-badge-action btn-badge-profile">📊 MY PROFILE & SQUADS</button>
+          <button onclick="logout()" class="btn-badge-action btn-badge-logout" title="Log out">↩</button>
+        </div>
+        <div id="guest-badge" class="guest-badge">
+          <button onclick="showScreen('screen-auth')" class="btn-badge-action btn-badge-login">🔐 LOGIN / REGISTER</button>
+        </div>
+        <button id="pwa-header-btn" class="btn-badge-action btn-pwa-header" onclick="triggerPWAInstall()">📲 INSTALL APP</button>
       </div>
     </div>
     <div class="lobby-card">
@@ -374,6 +396,32 @@ if ('serviceWorker' in navigator) {
       <button class="btn btn-primary" onclick="downloadCard()">⬇️ DOWNLOAD</button>
       <button class="btn btn-secondary" onclick="closeResultCard()">CLOSE</button>
     </div>
+  </div>
+</div>
+
+<!-- ── PWA INSTALL GUIDE MODAL ── -->
+<div id="pwa-guide-modal" class="modal-overlay hidden" onclick="closePwaGuide()">
+  <div class="modal-box pwa-guide-box" onclick="event.stopPropagation()">
+    <div class="modal-icon">📲</div>
+    <h3 class="modal-title">INSTALL IPL AUCTION</h3>
+    <div class="pwa-guide-steps">
+      <div class="pwa-step">
+        <div class="pwa-step-title">🍎 iPhone / iPad (Safari)</div>
+        <p>1. Tap the <strong>Share</strong> button <span style="font-size:16px">⎋</span> at the bottom of Safari.<br>
+           2. Scroll down and tap <strong>"Add to Home Screen"</strong> ⊕.<br>
+           3. Tap <strong>Add</strong> at the top right.</p>
+      </div>
+      <div class="pwa-step" style="margin-top:10px">
+        <div class="pwa-step-title">🤖 Android (Chrome / Edge)</div>
+        <p>1. Tap the <strong>Menu (3 dots)</strong> ⋮ in the top right.<br>
+           2. Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>.</p>
+      </div>
+      <div class="pwa-step" style="margin-top:10px">
+        <div class="pwa-step-title">💻 Windows / Mac (Chrome / Edge)</div>
+        <p>Look at the right side of the address bar and click the <strong>Install</strong> icon 🖥️.</p>
+      </div>
+    </div>
+    <button class="btn btn-primary" style="margin-top:15px;width:100%" onclick="closePwaGuide()">GOT IT</button>
   </div>
 </div>
 

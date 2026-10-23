@@ -54,17 +54,35 @@ DEFAULT_SET_ORDER = [
 
 DATA_DIR   = os.path.join(os.path.dirname(__file__), 'data')
 _tmp_users = os.path.join('/tmp', 'ipl_users.json')
-USERS_FILE = _tmp_users if os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('PORT') \
-             else os.path.join(DATA_DIR, 'users.json')
+PRIMARY_USERS_FILE = os.path.join(DATA_DIR, 'users.json')
 
 # ── User helpers ───────────────────────────────────────────────────────────────
 def load_users():
-    try:
-        with open(USERS_FILE) as f: return json.load(f)
-    except: return {}
+    for fpath in [PRIMARY_USERS_FILE, _tmp_users]:
+        try:
+            if os.path.exists(fpath):
+                with open(fpath, 'r', encoding='utf-8') as f:
+                    u = json.load(f)
+                    if u: return u
+        except Exception as e:
+            print(f"Error reading users from {fpath}: {e}")
+    return {}
 
 def save_users(u):
-    with open(USERS_FILE, 'w') as f: json.dump(u, f, indent=2)
+    # Try primary file first (inside container / app dir)
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(PRIMARY_USERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(u, f, indent=2)
+            return
+    except Exception as e:
+        print(f"Cannot save users to {PRIMARY_USERS_FILE}: {e}")
+    # Fallback to /tmp if primary path is read-only
+    try:
+        with open(_tmp_users, 'w', encoding='utf-8') as f:
+            json.dump(u, f, indent=2)
+    except Exception as e:
+        print(f"Cannot save users to {_tmp_users}: {e}")
 
 def hash_pw(pw): return hashlib.sha256(pw.encode()).hexdigest()
 

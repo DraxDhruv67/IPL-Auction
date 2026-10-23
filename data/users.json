@@ -120,5 +120,12 @@
     "password": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
     "created": "2026-10-23",
     "records": []
+  },
+  "testuser_670a1b": {
+    "username": "testuser_670a1b",
+    "display": "testuser_670a1b",
+    "password": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
+    "created": "2026-10-23",
+    "records": []
   }
 }
