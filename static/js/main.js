@@ -852,6 +852,25 @@ function closePwaGuide() {
   if (modal) modal.classList.add('hidden');
 }
 
+/* ── Check and display PWA banner on iOS / Android / Desktop ── */
+const isPWAStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+function checkBannerState() {
+  if (isPWAStandalone) {
+    const banner = ('pwa-install-banner');
+    if (banner) banner.classList.add('hidden');
+    const pwaBtn = ('pwa-header-btn');
+    if (pwaBtn) pwaBtn.style.display = 'none';
+    return;
+  }
+  if (!sessionStorage.getItem('pwa_dismissed')) {
+    const banner = ('pwa-install-banner');
+    if (banner) banner.classList.remove('hidden');
+  }
+  const pwaBtn = ('pwa-header-btn');
+  if (pwaBtn) pwaBtn.style.display = 'inline-flex';
+}
+setTimeout(checkBannerState, 600);
+
 /* ── Startup: Auto-restore session if logged in ── */
 if (currentUser) {
   showScreen('screen-lobby');

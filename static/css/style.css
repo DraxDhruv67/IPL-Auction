@@ -676,40 +676,79 @@ input::placeholder{color:var(--dim)}
 }
 .user-avatar-icon { font-size: 14px; }
 .user-badge-name { font-weight: 700; }
-.btn-badge-action {
+button.btn-badge-action, .btn-badge-action {
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: var(--surf);
   border: 1px solid var(--bord);
-  border-radius: 6px;
+  border-radius: 20px;
   color: var(--text);
   font-family: var(--fm);
   font-size: 11px;
-  padding: 5px 10px;
+  padding: 6px 14px;
   cursor: pointer;
   letter-spacing: 1px;
-  transition: all 0.15s;
+  transition: all 0.2s;
+  text-decoration: none;
+  box-sizing: border-box;
 }
-.btn-badge-action:hover {
+button.btn-badge-action:hover, .btn-badge-action:hover {
   border-color: var(--gold);
   color: var(--gold);
 }
-.btn-badge-profile {
-  background: rgba(255, 215, 0, 0.15);
-  border-color: var(--gold);
-  color: var(--gold);
+button.btn-badge-profile, .btn-badge-profile {
+  background: rgba(255, 215, 0, 0.15) !important;
+  border: 1px solid var(--gold) !important;
+  color: var(--gold) !important;
   font-weight: 700;
 }
-.btn-badge-logout { color: var(--dim); padding: 5px 8px; }
-.btn-badge-login {
-  background: rgba(42, 157, 143, 0.2);
-  border-color: #2a9d8f;
-  color: #2a9d8f;
+button.btn-badge-logout, .btn-badge-logout {
+  color: var(--dim) !important;
+  padding: 6px 10px;
+  border-radius: 50%;
+}
+button.btn-badge-login, .btn-badge-login {
+  background: rgba(42, 157, 143, 0.2) !important;
+  border: 1px solid #2a9d8f !important;
+  color: #2a9d8f !important;
   font-weight: 700;
 }
-.btn-pwa-header {
-  background: rgba(131, 56, 236, 0.2);
-  border-color: #8338ec;
-  color: #d1b3ff;
+button.btn-pwa-header, .btn-pwa-header {
+  background: rgba(131, 56, 236, 0.2) !important;
+  border: 1px solid #8338ec !important;
+  color: #d1b3ff !important;
   font-weight: 700;
+}
+
+@media (max-width: 480px) {
+  .lobby-user-bar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    margin-top: 6px;
+  }
+  button.btn-badge-action, .btn-badge-action {
+    padding: 7px 12px;
+    font-size: 11px;
+    flex: 1;
+    max-width: 160px;
+  }
+  .pwa-banner {
+    top: 8px;
+    width: calc(100% - 16px);
+    padding: 8px 10px;
+  }
+  .pwa-banner-icon { font-size: 20px; }
+  .pwa-banner-text strong { font-size: 12px; }
+  .pwa-banner-text span { font-size: 9px; }
+  .btn-pwa-install { padding: 5px 10px; font-size: 11px; }
 }
 
 /* ── Enhanced Profile View & Squads ── */

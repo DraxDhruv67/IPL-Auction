@@ -1,8 +1,8 @@
-const CACHE_NAME = 'ipl-auction-v1';
+const CACHE_NAME = 'ipl-auction-v2.2';
 const STATIC_ASSETS = [
   '/',
-  '/static/css/style.css',
-  '/static/js/main.js',
+  '/static/css/style.css?v=2.2',
+  '/static/js/main.js?v=2.2',
   '/static/manifest.json',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png'

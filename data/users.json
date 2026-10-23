@@ -127,5 +127,12 @@
     "password": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
     "created": "2026-10-23",
     "records": []
+  },
+  "testuser_58cadf": {
+    "username": "testuser_58cadf",
+    "display": "testuser_58cadf",
+    "password": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
+    "created": "2026-10-23",
+    "records": []
   }
 }
