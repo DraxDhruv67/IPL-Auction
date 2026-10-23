@@ -467,6 +467,17 @@ def _bot_bid_attempt(room_id, bot_sid, player_ver):
 @app.route('/')
 def index(): return render_template('index.html')
 
+@app.route('/manifest.json')
+def manifest():
+    return app.send_static_file('manifest.json')
+
+@app.route('/sw.js')
+def service_worker():
+    response = app.send_static_file('sw.js')
+    response.headers['Service-Worker-Allowed'] = '/'
+    response.headers['Content-Type'] = 'application/javascript'
+    return response
+
 @app.route('/api/rooms')
 def api_rooms():
     return jsonify([

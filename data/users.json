@@ -92,5 +92,26 @@
         "sold_count": 3
       }
     ]
+  },
+  "testuser_e996f2": {
+    "username": "testuser_e996f2",
+    "display": "testuser_e996f2",
+    "password": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
+    "created": "2026-10-23",
+    "records": []
+  },
+  "testuser_9bb21b": {
+    "username": "testuser_9bb21b",
+    "display": "testuser_9bb21b",
+    "password": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
+    "created": "2026-10-23",
+    "records": []
+  },
+  "testuser_5ebb16": {
+    "username": "testuser_5ebb16",
+    "display": "testuser_5ebb16",
+    "password": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
+    "created": "2026-10-23",
+    "records": []
   }
 }
