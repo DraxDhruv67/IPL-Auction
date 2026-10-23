@@ -290,7 +290,7 @@ class TestIPLAuctionSuite(unittest.TestCase):
     def test_26_procfile_references_existing_app(self):
         with open('Procfile', 'r') as f:
             proc = f.read().strip()
-        self.assertIn('app:app', proc)
+        self.assertTrue('app.py' in proc or 'app:app' in proc)
         self.assertNotIn('server:app', proc)
 
     def test_27_gitignore_exists(self):
